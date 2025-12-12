@@ -274,13 +274,13 @@ Once assigned, an `:id` is immutable for the lifetime of the score.
 
 Every part MUST contain a parallel absolute time spine expressed in two units:
 
-- `:beat` – rational number of quarter-notes since the start of the part (using ratio syntax, e.g., `487+1/2`).
-- `:sec` – floating-point seconds since start (optional, but REQUIRED if any tempo automation exists).
+- **Beats** – exact rational number of quarter-notes since the start of the part (using the rational syntax in this document, e.g., `487+1/2`).
+- **Seconds** – floating-point seconds since start (optional, but REQUIRED if any tempo automation exists).
 
 Every event and span endpoint MUST carry both:
 
 - Structural position within measure (beat index) for human readability
-- Absolute position `:at` for meter-agnostic reasoning
+- Absolute position `:at` (beats) for meter-agnostic reasoning
 
 **Example with dual positioning:**
 ```clojure
@@ -360,6 +360,16 @@ All top-level sections except `overlays`, `alternatives`, and `layout` are REQUI
 ```
 
 The version number follows semantic versioning (MAJOR.MINOR). Parsers MUST reject documents with unsupported major versions and SHOULD warn on unknown minor versions.
+
+#### 4.3.1 Version Domains
+
+This RFC uses three distinct version identifiers:
+
+1. **RFC version** (e.g., "RFC 0001 — Version 0.3") — the editorial version of this document.
+2. **MRS-S format version** — the value in `(mrs-s <version> ...)` that governs parsing/validation of score documents.
+3. **Working Set Envelope protocol version** — the `:version` field inside `(working-set ...)` and `(working-set-response ...)`.
+
+Implementations MUST treat these as separate version domains.
 
 ### 4.4 Metadata Section
 <a id="4-4-metadata-section"></a>
@@ -649,7 +659,7 @@ Within a voice, layers MAY be used to represent same-rhythm content:
 | Component | Description |
 |-----------|-------------|
 | `:` | Event marker (always present) |
-| `<beat>` | Beat position within measure (0-indexed, decimal) |
+| `<beat>` | Beat position within measure (0-indexed, exact rational) |
 | `<pitch-expr>` | Pitch with duration, chord, or rest |
 | `<properties>` | Zero or more `:keyword value` pairs |
 
@@ -668,7 +678,9 @@ Within a voice, layers MAY be used to represent same-rhythm content:
 
 #### 4.8.2 Beat Position
 
-Beat positions are zero-indexed decimals relative to the measure start:
+Beat positions are zero-indexed **exact rationals** relative to the measure start.
+
+They MUST be representable without approximation. Implementations MUST treat these values as exact numbers (no floating point tolerance).
 
 ```
 4/4 time:
@@ -676,13 +688,26 @@ Beat positions are zero-indexed decimals relative to the measure start:
   Beat 1    = Beat 2
   Beat 2    = Beat 3
   Beat 3    = Beat 4
-  Beat 0.5  = "And" of beat 1
-  Beat 1.75 = Fourth sixteenth of beat 2
+  Beat 0+1/2  = "And" of beat 1
+  Beat 1+3/4 = Fourth sixteenth of beat 2
 
 6/8 time (compound):
   Beat 0    = Downbeat
   Beat 1    = Dotted quarter 2
-  Beat 0.333... = First eighth subdivision
+  Beat 0+1/3 = First eighth subdivision
+```
+
+**Canonical numeric form:**
+
+- Integers MAY be written as `0`, `1`, `2`, ...
+- Non-integers SHOULD be written in the same rational syntax used elsewhere in this spec (e.g., `0+1/3`, `1+3/4`).
+
+**Consistency with absolute positioning:**
+
+For any event E within a measure M, the following MUST hold:
+
+```
+E.:at = M.:beat-start + E.<beat>
 ```
 
 #### 4.8.3 Pitch Expression
@@ -831,15 +856,15 @@ cuivre stopped open mute-straight mute-cup mute-harmon
 ```clojure
 (tuplet 3:2 q                    ; Triplet: 3 in the space of 2 quarters
   (: 0 C4.e :id #uuid "..." :at 0)
-  (: 0.333 D4.e :id #uuid "..." :at 0+1/3)
-  (: 0.667 E4.e :id #uuid "..." :at 0+2/3))
+  (: 0+1/3 D4.e :id #uuid "..." :at 0+1/3)
+  (: 0+2/3 E4.e :id #uuid "..." :at 0+2/3))
 
 (tuplet 5:4 q                    ; Quintuplet: 5 in the space of 4 quarters  
   (: 0 C4.s :id #uuid "..." :at 0)
-  (: 0.2 D4.s :id #uuid "..." :at 0+1/5)
-  (: 0.4 E4.s :id #uuid "..." :at 0+2/5)
-  (: 0.6 F4.s :id #uuid "..." :at 0+3/5)
-  (: 0.8 G4.s :id #uuid "..." :at 0+4/5))
+  (: 0+1/5 D4.s :id #uuid "..." :at 0+1/5)
+  (: 0+2/5 E4.s :id #uuid "..." :at 0+2/5)
+  (: 0+3/5 F4.s :id #uuid "..." :at 0+3/5)
+  (: 0+4/5 G4.s :id #uuid "..." :at 0+4/5))
 ```
 
 **Tuplet Syntax:**
@@ -976,7 +1001,7 @@ When extracting a Working Set Envelope, spans that cross envelope boundaries MUS
   :id #uuid "018c3f2a-..."
   :from #uuid "018c3f1a-..."
   :to #uuid "018c3f2b-..."
-  :boundary-exit :to #uuid "018c3f2b-...")
+  :boundary-exit :to)
 ```
 
 2. **Span enters envelope**: Any span starting outside and ending inside MUST be included with `:boundary-entry`:
@@ -987,14 +1012,28 @@ When extracting a Working Set Envelope, spans that cross envelope boundaries MUS
   :from #uuid "018c3f1b-..."
   :to #uuid "018c3f2d-..."
   :type crescendo
-  :boundary-entry :from #uuid "018c3f1b-...")
+  :boundary-entry :from)
 ```
 
 3. **Span crosses envelope**: Any span that starts before and ends after MUST have both markers.
 
+**Semantics:**
+
+- `:boundary-entry` and `:boundary-exit` indicate which endpoint UUID lies *outside* the envelope.
+- A boundary-marked span MAY reference out-of-envelope event UUIDs at the marked endpoint(s).
+- Boundary markers are REQUIRED for any span that would otherwise reference an out-of-envelope event UUID.
+
 #### 4.12.2 Write Protection
 
-Cross-boundary spans are write-protected at their boundary endpoints. Agents MAY modify only visual style properties that do not affect semantics. Violation is a fatal error on replace.
+Cross-boundary spans are write-protected at their boundary endpoints. On replacement, orchestrators MUST enforce:
+
+- **Immutable semantic fields**: `:from`, `:to`, and any event endpoint lists (e.g., `:events` for beams) MUST NOT change.
+- **Allowed modifications**: agents MAY change only rendering/editorial properties:
+  - keys in the `render:*` namespace
+  - keys in the `edit:*` namespace
+  - keys with `x-` prefix
+
+Any change to immutable semantic fields on a boundary-marked span MUST be rejected (fatal).
 
 ### 4.13 Directions
 <a id="4-13-directions"></a>
@@ -1577,7 +1616,7 @@ MRS uses a **dual positioning model**:
 
 **Structural positioning** (measure-relative):
 - Beat 0 is the first beat of the measure
-- Beat positions are decimals
+- Beat positions are exact rationals
 - Used for human readability
 
 **Absolute positioning**:
@@ -1659,9 +1698,13 @@ function replace(source: MRS-S, response: WorkingSetResponse) -> Result<MRS-S>:
   
   4. Assign UUIDs to new objects lacking them
   
-  5. For each part/measure in scope:
-     DELETE existing content
-     INSERT response content
+  5. For each measure UUID in scope:
+     a) Locate the corresponding measure in source by :id
+     b) For each scoped part in (:parts [...]):
+        DELETE existing content for that part within that measure
+        INSERT response content for that part within that measure
+     c) Preserve all unscoped parts in that measure unchanged
+     d) Preserve measure-level attributes unchanged (except orchestrator-managed fields during insertion operations)
   
   6. Handle spans (update/insert/delete)
   
@@ -1669,6 +1712,18 @@ function replace(source: MRS-S, response: WorkingSetResponse) -> Result<MRS-S>:
   
   8. Return updated MRS-S
 ```
+
+#### 9.3.2 Measure Attribute Rules (Determinism)
+
+To keep replacement deterministic and safe for partial scopes:
+
+- A `working-set-response` MUST include the target measures by `:id`.
+- For any measure replaced, `:id` MUST match the source measure `:id`.
+- For any measure replaced, `:beat-start` MUST match the source value.
+- `:number` is a display hint and MAY differ; orchestrators MAY normalize it.
+- Other measure-level attributes (`:time`, `:key`, `:tempo`, barlines, etc.) MUST NOT be changed via scoped replacement in v1.0. If provided in the response, they MUST exactly match the source or replacement MUST be rejected.
+
+Measure insertions/structural changes MUST use the insertion mechanism defined in §9.5.
 
 ### 9.4 Round-Trip Guarantee
 
@@ -1871,7 +1926,7 @@ UUID to display information:
 | STRUCT-001 | ERROR | Duplicate UUIDs |
 | STRUCT-002 | ERROR | Invalid measure numbers (non-positive) |
 | STRUCT-003 | ERROR | Invalid beat position |
-| STRUCT-004 | ERROR | Reference to non-existent UUID |
+| STRUCT-004 | ERROR | Reference to non-existent UUID (except boundary-marked span endpoints) |
 | STRUCT-005 | ERROR | Missing required `:id` or `:at` |
 | STRUCT-006 | WARNING | Gap in measure numbering |
 | STRUCT-007 | WARNING | Empty measure |
@@ -1895,7 +1950,7 @@ UUID to display information:
 | SPAN-002 | ERROR | Slur from/to identical |
 | SPAN-003 | WARNING | Slur spans more than 8 measures |
 | SPAN-004 | WARNING | Overlapping slurs |
-| SPAN-005 | FATAL | Boundary-anchored span modified |
+| SPAN-005 | FATAL | Boundary-anchored span endpoint modified |
 
 ---
 
@@ -1944,7 +1999,7 @@ Events, spans, and directions support custom properties with `x-` prefix:
 | Format | MIME Type |
 |--------|-----------|
 | MRS-S | `application/vnd.mrs+sexpr` |
-| Working Set Envelope | `application/vnd.mrs+sexpr` |
+| Working Set Envelope / Response | `application/vnd.mrs-work+sexpr` |
 
 ### 14.2 File Extensions
 
@@ -2002,6 +2057,8 @@ pitch     <- STEP ACCIDENTAL? OCTAVE '.' DURATION
 chord     <- '[' pitch+ ']' '.' DURATION
 span      <- '(' span-type ':id' uuid ':from' uuid ':to' uuid attributes* ')'
 uuid      <- '#uuid' '"' UUID-STRING '"'
+rational  <- INT (('+' INT '/' INT) | ('/' INT))?
+beat      <- rational
 ```
 
 ### A.2 Working Set Envelope Key Productions
