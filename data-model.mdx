@@ -3,61 +3,92 @@ title: "Data Model"
 description: "The canonical model underlying MRS-S and Working Set Envelopes."
 ---
 
-MRS-S and Working Set Envelopes serialize the same underlying data model. Working Sets simply extract a bounded subset of this model.
+MRS-S and Working Set Envelopes serialize the same underlying data model. Working Sets simply extract a bounded subset of this model with context.
 
-See: [`/MRS-Specification-RFC#6-data-model`](/MRS-Specification-RFC#6-data-model)
+See: [`/MRS-Specification-RFC#8-data-model`](/MRS-Specification-RFC#8-data-model)
 
-## Core entities (overview)
+## Core Entities
 
-At a high level, the model consists of:
+```
+Score
+├── Metadata: Map<String, Value>
+├── Parts: OrderedMap<PartId, Part>
+├── Measures: OrderedMap<UUID, Measure>
+├── Spans: Set<Span>
+├── Overlays: Set<Overlay> (optional)
+└── Layout: LayoutHints (optional)
 
-- **Score**: metadata, ordered parts, ordered measures, spans (and optional layout hints)
-- **Part**: identity, staves/clefs, section, optional transposition/range, attributes
-- **Measure**: musical context and per-part content
-- **Event**: beat-positioned atomic occurrence with pitch/duration and properties
-- **Span**: typed relations between event references
-- **Direction**: typed directions attached to temporal positions
+Measure
+├── id: UUIDv7 (stable identity)
+├── number: PositiveInt (display property)
+├── beat-start: Rational (absolute position)
+├── sec-start: Float? (if tempo automation)
+├── time, key, tempo, rehearsal...
+└── content: Map<PartId, PartContent>
 
-See: [`/MRS-Specification-RFC#6-2-core-entities`](/MRS-Specification-RFC#6-2-core-entities)
+Event
+├── id: UUIDv7 (stable identity)
+├── beat: Decimal (position in measure)
+├── at: Rational (absolute position)
+├── pitches: List<Pitch>
+├── duration: Duration
+└── properties: Map<String, Value>
+
+Span
+├── id: UUIDv7 (stable identity)
+├── type: slur | tie | beam | hairpin | ...
+├── from: UUIDv7 (event reference)
+├── to: UUIDv7 (event reference)
+└── properties: Map<String, Value>
+```
+
+See: [`/MRS-Specification-RFC#8-2-core-entities`](/MRS-Specification-RFC#8-2-core-entities)
 
 ## Invariants
 
-The RFC defines invariants that must hold for valid documents, including:
+1. **Unique identifiers**: No two measures, events, or spans share a UUID
+2. **Display numbers**: Measure numbers must be positive; may have gaps
+3. **Beat bounds**: Event beat positions must be ≥ 0 and < measure duration
+4. **Duration sum**: Voice durations should not exceed measure duration
+5. **Tie pitch match**: Tied notes must have identical pitch
+6. **Span validity**: Span endpoints must reference existing UUIDs
+7. **Voice consistency**: Events in a voice should not overlap temporally
+8. **UUID immutability**: Once assigned, an `:id` is immutable
+9. **Dual positioning**: Every event MUST have both `beat` and `:at`
+10. **Measure identity**: Every measure MUST have `:id` and `:number`
 
-1. Unique part IDs
-2. Sequential positive measure numbers (gaps allowed)
-3. Beat bounds: beat ≥ 0 and < measure duration
-4. Duration sum within a voice should not exceed the measure duration
-5. Tie pitch match
-6. Span endpoints must reference existing events
-7. Voice consistency (no temporal overlap)
+See: [`/MRS-Specification-RFC#8-3-invariants`](/MRS-Specification-RFC#8-3-invariants)
 
-See: [`/MRS-Specification-RFC#6-3-invariants`](/MRS-Specification-RFC#6-3-invariants)
+## Measure Identity
 
-## Event identity and referencing
-
-Events may be referenced by:
-
-- **Derived path reference**, e.g.:
-
-```text
-[m45 violin-1 v1 b2.5]
-```
-
-- **Explicit ID** preserved across transformations, e.g.:
+Measures have dual identity:
 
 ```clojure
-(: 2.5 G4.q :id "theme-a-start")
+(measure 
+  :id #uuid "018c3f40-002d-7890-abcd-ef1234567890"  ; Stable identity
+  :number 45                                         ; Display property
+  :beat-start 487+1/4
+  ...)
 ```
 
-See: [`/MRS-Specification-RFC#6-4-event-identity`](/MRS-Specification-RFC#6-4-event-identity)
+- `:id` — Used for all internal references, survives insertions/deletions
+- `:number` — For human navigation only, can change
 
-## Temporal model
+See: [`/MRS-Specification-RFC#3-3-stable-identifiers`](/MRS-Specification-RFC#3-3-stable-identifiers)
 
-MRS uses a **measure-relative beat model**:
+## Temporal Model
 
+MRS uses a **dual positioning model**:
+
+**Structural positioning** (measure-relative):
 - Beat 0 is the first beat of the measure
-- Beat positions are decimals (e.g., 1.5)
-- Measure duration derives from the time signature
+- Used for human readability
 
-See: [`/MRS-Specification-RFC#6-5-temporal-model`](/MRS-Specification-RFC#6-5-temporal-model)
+**Absolute positioning**:
+- `:at` — Rational quarter-notes since part start
+- `:sec` — Seconds since start (if tempo automation)
+- Used for validation and meter-agnostic reasoning
+
+All validation involving timing MUST use absolute positions.
+
+See: [`/MRS-Specification-RFC#8-4-temporal-model`](/MRS-Specification-RFC#8-4-temporal-model)

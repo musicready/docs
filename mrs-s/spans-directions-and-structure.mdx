@@ -1,8 +1,88 @@
 ---
 title: "MRS-S Spans, Directions, and Score Structure"
-description: "Spans, directions, optional layout hints, alternatives, ensemble handling, and multi-movement structure."
+description: "Spans with UUID references, directions, optional layout hints, and multi-movement structure."
 ---
 
-See: [`/MRS-Specification-RFC#4-11-spans-section`](/MRS-Specification-RFC#4-11-spans-section) and [`/MRS-Specification-RFC#4-12-directions`](/MRS-Specification-RFC#4-12-directions)
+See: [`/MRS-Specification-RFC#4-11-spans-section`](/MRS-Specification-RFC#4-11-spans-section) and [`/MRS-Specification-RFC#4-13-directions`](/MRS-Specification-RFC#4-13-directions)
 
+## Spans
 
+Spans define relationships between events. All references use UUIDs:
+
+```clojure
+(spans
+  (slur
+    :id #uuid "018c3f2c-9abc-def0-1234-567890abcdef"
+    :from #uuid "018c3f2a-1234-7890-abcd-ef1234567890"
+    :to #uuid "018c3f2b-5678-9012-cdef-0123456789ab"
+    :placement above)
+  
+  (tie
+    :id #uuid "018c3f2d-..."
+    :from #uuid "018c3f2e-..."
+    :to #uuid "018c3f2f-...")
+  
+  (hairpin
+    :id #uuid "018c3f39-..."
+    :from #uuid "018c3f3a-..."
+    :to #uuid "018c3f3b-..."
+    :type crescendo)
+  
+  (beam
+    :id #uuid "018c3f30-..."
+    :events [#uuid "..." #uuid "..." #uuid "..." #uuid "..."]))
+```
+
+### Span Types
+
+| Type | Description |
+|------|-------------|
+| `slur` | Phrase marking |
+| `tie` | Connects identical pitches |
+| `beam` | Connects note flags |
+| `hairpin` | Dynamic wedge |
+| `ottava` | Octave transposition |
+| `pedal` | Piano pedal |
+| `gliss` | Glissando line |
+| `volta` | Ending bracket |
+
+## Cross-Boundary Spans
+
+Spans crossing envelope boundaries are marked:
+
+```clojure
+(slur
+  :id #uuid "..."
+  :from #uuid "..."
+  :to #uuid "..."
+  :boundary-exit :to #uuid "...")  ; Endpoint outside envelope
+```
+
+Cross-boundary spans are write-protected at their boundary endpoints.
+
+## Directions
+
+```clojure
+(measure :id #uuid "..." :number 45 :beat-start 487+1/4
+  
+  (dir :type tempo :beat 0 :text "Più mosso" :tempo 132)
+  (dir :type dynamic :beat 0 :text "ff" :scope all)
+  (dir :type rehearsal :beat 0 :text "B")
+  (dir :type segno :beat 0)
+  
+  (violin-1
+    (dir :type text :beat 0 :text "sul G" :placement above)
+    ...))
+```
+
+## Multi-Movement Structure
+
+```clojure
+(movements
+  (movement 1 :title "Allegro" :key C :mode major :time 4/4
+    (measures
+      (measure :id #uuid "..." :number 1 ...) ...))
+  (movement 2 :title "Adagio" :key F :mode major :time 3/4
+    (measures
+      (measure :id #uuid "..." :number 1 ...) ...)))
+```

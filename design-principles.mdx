@@ -12,12 +12,13 @@ This page summarizes the design principles stated in the RFC. For normative word
 
 Rationale: implicit state can cascade into large misalignments; explicit positions are independently verifiable.
 
-## Local over global
+## Stable identity over positional reference
 
-- References are **path-based** (e.g., `m45.violin.b2`) rather than global opaque IDs.
-- Measures are intended to be **self-contained** and independently parseable.
+- Measures and events carry **stable UUIDv7 identifiers**.
+- Measure numbers are **display properties** for human navigation, not structural identity.
+- All internal references use **UUIDs**, not measure numbers.
 
-Rationale: global state makes edits fragile; path-based references survive insertions/deletions without renumbering.
+Rationale: positional references break when content is inserted or deleted. UUID references survive structural changes, enabling fluid compositional workflows.
 
 ## Semantic over visual
 
@@ -31,10 +32,17 @@ Rationale: rendering is context-dependent; semantics remain stable across render
 
 Rationale: consistent syntax improves reliability (especially for machine generation).
 
+## Context over isolation
+
+- Working Sets include **graduated context rings**—surrounding material at reduced detail.
+- Agents have **synopsis access** for global structural awareness.
+
+Rationale: musical decisions are contextual. A countermelody responds to what precedes and follows. Phrase boundaries, harmonic rhythm, and thematic relationships inform compositional choices.
+
 ## One format, scoped extraction
 
 - MRS uses a **single syntax** (MRS-S) for all operations.
-- Working Set Envelopes extract **bounded fragments** with scope metadata.
+- Working Set Envelopes extract **bounded fragments** with scope metadata and context.
 - Agents receive MRS-S and return MRS-S—no format conversion.
 
 Rationale: maintaining two syntaxes creates parsing complexity, abbreviation ambiguity, and merge conflicts. A single syntax means extraction and replacement are trivial operations.

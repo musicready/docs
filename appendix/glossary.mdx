@@ -5,4 +5,22 @@ description: "Canonical definitions used throughout the specification."
 
 See: [`/MRS-Specification-RFC#appendix-d-glossary`](/MRS-Specification-RFC#appendix-d-glossary)
 
-
+| Term | Definition |
+|------|------------|
+| **Agent** | An AI system that operates on MRS documents |
+| **Beat** | A metrical position within a measure (0-indexed) |
+| **Chord** | Multiple simultaneous pitches with shared duration |
+| **Context Ring** | Surrounding material at reduced detail level (read-only) |
+| **Event** | An atomic musical occurrence at a specific beat, identified by UUID |
+| **Extraction** | Creating a Working Set Envelope from a source MRS-S |
+| **Measure** | A metrical unit bounded by barlines, identified by UUID |
+| **MRS-S** | The canonical MRS format (S-expression based) |
+| **Orchestrator** | System that coordinates agent tasks and manages the full score |
+| **Overlay** | Analytical metadata attached to score regions |
+| **Part** | A single instrument or voice throughout a score |
+| **Replacement** | Substituting extracted scope with agent's response |
+| **Scope** | The UUID-based boundaries of a Working Set |
+| **Scope Negotiation** | Protocol for agents to request scope adjustments |
+| **Span** | A relation connecting multiple events (slur, tie, etc.) |
+| **Synopsis** | A compressed structural view of the full score (read-only) |
+| **Working Set Envelope** | A scoped MRS-S fragment with context for agent tasks |

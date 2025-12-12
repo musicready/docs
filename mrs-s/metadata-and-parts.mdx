@@ -5,4 +5,75 @@ description: "Score-level metadata and part definitions in MRS-S."
 
 See: [`/MRS-Specification-RFC#4-4-metadata-section`](/MRS-Specification-RFC#4-4-metadata-section) and [`/MRS-Specification-RFC#4-5-parts-section`](/MRS-Specification-RFC#4-5-parts-section)
 
+## Metadata Section
 
+```clojure
+(meta
+  :title "Symphony No. 5 in C Minor"
+  :subtitle "Fate Knocking at the Door"
+  :composers ["Ludwig van Beethoven"]
+  :copyright "Public Domain"
+  :created "1808"
+  :modified "2025-12-12T10:30:00Z"
+  
+  ; Score-wide defaults
+  :key C :mode minor
+  :time 2/4
+  :tempo 108
+  :tempo-text "Allegro con brio")
+```
+
+### Required Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `:title` | string | Primary title of the work |
+
+### Optional Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `:subtitle` | string | Secondary title |
+| `:composers` | [string] | List of composer names |
+| `:key` | pitch-class | Default key |
+| `:mode` | keyword | `major`, `minor`, `dorian`, etc. |
+| `:time` | fraction | Default time signature |
+| `:tempo` | integer | Default tempo in BPM |
+
+## Parts Section
+
+```clojure
+(parts
+  (part flute-1
+    :name "Flute 1"
+    :abbr "Fl. 1"
+    :staves [treble]
+    :section woodwinds
+    :range [C4 D7])
+  
+  (part clarinet-bb
+    :name "Clarinet in B♭"
+    :abbr "Cl."
+    :staves [treble]
+    :section woodwinds
+    :transposition (down M2)
+    :range [D3 Bb6])
+  
+  (part piano
+    :name "Piano"
+    :abbr "Pno."
+    :staves [treble bass]
+    :section keyboards
+    :staff-connect brace))
+```
+
+### Part Attributes
+
+| Attribute | Required | Description |
+|-----------|----------|-------------|
+| `:name` | YES | Full display name |
+| `:abbr` | YES | Abbreviated name |
+| `:staves` | YES | List of staff clefs |
+| `:section` | NO | Instrument family |
+| `:transposition` | NO | Transposition interval |
+| `:range` | NO | Playable range |

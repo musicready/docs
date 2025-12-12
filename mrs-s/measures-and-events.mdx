@@ -1,8 +1,90 @@
 ---
 title: "MRS-S Measures & Events"
-description: "Measures, voices/layers, beat-position events, pitch/duration, and event properties."
+description: "Measures with UUID identity, voices/layers, beat-position events, pitch/duration, and event properties."
 ---
 
 See: [`/MRS-Specification-RFC#4-6-measures-section`](/MRS-Specification-RFC#4-6-measures-section) and [`/MRS-Specification-RFC#4-8-event-syntax`](/MRS-Specification-RFC#4-8-event-syntax)
 
+## Measure Structure
 
+Every measure has both UUID identity and display number:
+
+```clojure
+(measure 
+  :id #uuid "018c3f40-002d-7890-abcd-ef1234567890"  ; Stable identity
+  :number 45                                         ; Display property
+  :beat-start 487+1/4                                ; Absolute position
+  :time 4/4
+  :key C :mode minor
+  
+  (violin-1
+    (v1
+      (: 0 G5.q :dyn f :id #uuid "018c3f2a-..." :at 487+1/4)
+      (: 1 A5.e :id #uuid "018c3f2b-..." :at 488+1/4)
+      ...)))
+```
+
+### Required Measure Attributes
+
+| Attribute | Description |
+|-----------|-------------|
+| `:id` | Stable UUIDv7 identifier |
+| `:number` | Display number (1-indexed) |
+| `:beat-start` | Absolute beat position |
+
+### Optional Measure Attributes
+
+| Attribute | Description |
+|-----------|-------------|
+| `:sec-start` | Absolute seconds (required if tempo automation) |
+| `:time` | Time signature change |
+| `:key`, `:mode` | Key signature change |
+| `:tempo` | Tempo change |
+| `:rehearsal` | Rehearsal mark |
+
+## Event Syntax
+
+```clojure
+(: <beat> <pitch-expr> <properties>*)
+```
+
+Every event MUST have `:id` and `:at`:
+
+```clojure
+(: 0 C5.q 
+  :id #uuid "018c3f2a-1234-7890-abcd-ef1234567890"
+  :at 487+1/4
+  :dyn p)
+```
+
+### Pitch Expression
+
+```clojure
+C4.q        ; C4 quarter note
+Eb5.h       ; E-flat 5 half note
+[C4 E4 G4].q  ; C major triad
+r.q         ; Quarter rest
+```
+
+### Duration Codes
+
+| Code | Duration | Beats |
+|------|----------|-------|
+| `w` | Whole | 4 |
+| `h` | Half | 2 |
+| `q` | Quarter | 1 |
+| `e` | Eighth | 0.5 |
+| `s` | Sixteenth | 0.25 |
+
+Add `.` for dotted, `..` for double-dotted.
+
+### Event Properties
+
+| Property | Description |
+|----------|-------------|
+| `:id` | Stable UUIDv7 identifier (REQUIRED) |
+| `:at` | Absolute beat position (REQUIRED) |
+| `:dyn` | Dynamic (pp, p, mp, mf, f, ff, etc.) |
+| `:art` | Articulation (staccato, tenuto, etc.) |
+| `:orn` | Ornament (trill, mordent, etc.) |
+| `:tech` | Technique (pizz, arco, etc.) |

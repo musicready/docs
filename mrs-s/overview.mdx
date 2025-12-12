@@ -1,13 +1,13 @@
 ---
 title: "MRS-S Overview"
-description: "The complete, archival storage format (hierarchical S-expression)."
+description: "The complete, archival storage format (hierarchical S-expression) with stable UUID identifiers."
 ---
 
-MRS-S is an S-expression-based format optimized for complete semantic fidelity, clear hierarchy, readability, and straightforward parsing.
+MRS-S is an S-expression-based format optimized for complete semantic fidelity, clear hierarchy, readability, straightforward parsing, and stable identity via UUIDs.
 
-See: [`/MRS-Specification-RFC#4-1-overview`](/MRS-Specification-RFC#4-1-overview)
+See: [`/MRS-Specification-RFC#4-mrs-s-the-canonical-format`](/MRS-Specification-RFC#4-mrs-s-the-canonical-format)
 
-## Top-level structure
+## Top-level Structure
 
 ```clojure
 (mrs-s <version>
@@ -15,10 +15,52 @@ See: [`/MRS-Specification-RFC#4-1-overview`](/MRS-Specification-RFC#4-1-overview
   (parts <part-definitions>)
   (measures <measure-content>)      ; OR (movements <movement-content>)
   (spans <span-definitions>)
+  (overlays <overlay-content>)      ; OPTIONAL
   (alternatives <alt-content>)      ; OPTIONAL
   (layout <layout-hints>))          ; OPTIONAL
 ```
 
 See: [`/MRS-Specification-RFC#4-2-document-structure`](/MRS-Specification-RFC#4-2-document-structure)
 
+## Key Characteristics
 
+### Stable UUID Identifiers
+
+Every measure, event, and span carries a stable UUIDv7 identifier:
+
+```clojure
+(measure 
+  :id #uuid "018c3f40-1234-7890-abcd-ef1234567890"
+  :number 45
+  :beat-start 487+1/4
+  ...)
+
+(: 0 C5.q 
+  :id #uuid "018c3f2a-1234-7890-abcd-ef1234567890"
+  :at 487+1/4
+  :dyn p)
+```
+
+- `:id` — Stable identity for all internal references
+- `:number` / `beat` — Display/structural position for human navigation
+
+### Dual Positioning
+
+Every event has both structural position (beat within measure) and absolute position:
+
+```clojure
+(: 0 C5.q        ; Beat 0 within measure
+  :at 487+1/4    ; Absolute position in quarter-notes
+  :id #uuid "...")
+```
+
+### All References Use UUIDs
+
+Span endpoints, working set scopes, overlay regions—everything references by UUID:
+
+```clojure
+(slur
+  :id #uuid "018c3f2c-..."
+  :from #uuid "018c3f2a-..."
+  :to #uuid "018c3f2b-...")
+```

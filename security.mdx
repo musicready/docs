@@ -3,6 +3,32 @@ title: "Security Considerations"
 description: "Input validation, denial-of-service considerations, and working-set redaction."
 ---
 
-See: [`/MRS-Specification-RFC#12-security-considerations`](/MRS-Specification-RFC#12-security-considerations)
+See: [`/MRS-Specification-RFC#15-security-considerations`](/MRS-Specification-RFC#15-security-considerations)
 
+## Input Validation
 
+Parsers MUST validate input before processing:
+
+- Maximum document size limits
+- Maximum nesting depth limits
+- Maximum event count per measure
+- Valid Unicode in strings
+
+## Denial of Service Protection
+
+Implementations SHOULD protect against:
+
+- Deeply nested structures (stack overflow)
+- Very large measure numbers (memory exhaustion)
+- Excessive span counts (O(n²) algorithms)
+- Malformed UTF-8 sequences
+
+## Information Disclosure
+
+Working Set Envelopes may expose:
+
+- Source document structure (via `:scope`)
+- Source document hash (for conflict detection)
+- Creator/modifier identity (via `:agent-id`)
+
+Implementations SHOULD allow redaction of sensitive metadata when sharing working sets externally.

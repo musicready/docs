@@ -1,6 +1,6 @@
 ---
 title: "Appendix: Quick Reference"
-description: "Duration codes, event properties, and Working Set scope fields."
+description: "Duration codes, required properties, and Working Set scope fields."
 ---
 
 See: [`/MRS-Specification-RFC#appendix-b-quick-reference`](/MRS-Specification-RFC#appendix-b-quick-reference)
@@ -18,6 +18,21 @@ See: [`/MRS-Specification-RFC#appendix-b-quick-reference`](/MRS-Specification-RF
 
 Add `.` for dotted, `..` for double-dotted.
 
+## Required Event Properties
+
+| Property | Description |
+|----------|-------------|
+| `:id` | Stable UUIDv7 identifier |
+| `:at` | Absolute beat position |
+
+## Required Measure Properties
+
+| Property | Description |
+|----------|-------------|
+| `:id` | Stable UUIDv7 identifier |
+| `:number` | Display number (human navigation) |
+| `:beat-start` | Absolute beat position |
+
 ## Event Properties
 
 | Property | Values | Description |
@@ -33,9 +48,19 @@ Add `.` for dotted, `..` for double-dotted.
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `:measures` | Yes | Start and end measure (inclusive) |
+| `:measures` | Yes | UUID range (inclusive) |
 | `:parts` | Yes | List of part IDs to include |
 | `:voices` | No | List of voice IDs (default: all) |
+| `:display-hint` | No | Human-readable measure numbers |
 | `:source-hash` | No | SHA-256 for conflict detection |
 | `:context` | No | Human-readable task description |
 | `:constraints` | No | Validation rules for agent output |
+
+## Context Ring Reduction Levels
+
+| Level | Content |
+|-------|---------|
+| `:full` | Everything (no reduction) |
+| `:melodic-skeleton` | Downbeats, phrase boundaries, structural tones |
+| `:harmonic-rhythm` | Chord roots, key changes, bass line |
+| `:structural` | Rehearsal marks, tempo changes, texture shifts only |

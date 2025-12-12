@@ -1,0 +1,72 @@
+---
+title: "Query Resolution"
+description: "How human-friendly references (measure numbers, rehearsal marks) resolve to UUIDs."
+---
+
+MRS uses UUIDs internally for structural stability, but humans navigate by measure numbers and rehearsal marks. The Query Resolution protocol bridges this gap.
+
+See: [`/MRS-Specification-RFC#11-query-resolution`](/MRS-Specification-RFC#11-query-resolution)
+
+## Overview
+
+The orchestrator translates human-friendly references to UUIDs. Agents always receive and work with UUIDs.
+
+## Query Types
+
+### Measure Number Resolution
+
+```clojure
+(query
+  :type resolve
+  :human-ref (:measure-number 45)
+  :response (:id #uuid "018c3f40-002d-..." :number 45))
+```
+
+### Rehearsal Mark Resolution
+
+```clojure
+(query
+  :type resolve
+  :human-ref (:rehearsal "B")
+  :response (:id #uuid "018c3f40-0020-..." :number 32))
+```
+
+### Rehearsal Mark with Offset
+
+```clojure
+(query
+  :type resolve
+  :human-ref (:rehearsal "B" :offset 4)
+  :response (:id #uuid "018c3f40-0024-..." :number 36))
+```
+
+### Range Resolution
+
+```clojure
+(query
+  :type resolve-range
+  :human-ref (:measures 45 52)
+  :response (:from #uuid "018c3f40-002d-..."
+             :to #uuid "018c3f40-0034-..."
+             :display-range [45 52]))
+```
+
+## Reverse Resolution
+
+Get display information from a UUID:
+
+```clojure
+(query
+  :type display-info
+  :id #uuid "018c3f40-002d-..."
+  :response (:number 45 :rehearsal "C" :beat-start 487+1/4))
+```
+
+## Workflow
+
+1. Human provides instruction: "Edit measures 45-52"
+2. Orchestrator resolves to UUIDs
+3. Working Set Envelope uses UUID scope with display hint
+4. Agent works entirely with UUIDs
+5. Results displayed with human-friendly numbers
+

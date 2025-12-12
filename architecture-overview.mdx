@@ -1,39 +1,46 @@
 ---
 title: "Architecture Overview"
-description: "How MRS-S and Working Set Envelopes enable agent workflows on full-scale scores."
+description: "How MRS-S, Working Set Envelopes, Synopsis, and Overlays enable context-aware agent workflows."
 ---
 
 This page follows RFC section 3. For the full text, see: [`/MRS-Specification-RFC#3-architecture-overview`](/MRS-Specification-RFC#3-architecture-overview).
 
-MRS is intentionally **AI/agent-oriented**: its primary goal is to make it practical for tools and machine agents to work with **full, professional scores** (including orchestral-scale works) through safe, local, deterministic edits—without ever requiring the whole score in one working context. The format remains **human-auditable** and version-control friendly, but is not primarily optimized for manual authoring.
+MRS enables **context-aware agent operations** on **full-scope scores**: tools and machine agents operate on focused regions with appropriate surrounding context, while the orchestrator maintains the full score and handles structural coordination.
 
-## The Single-Format Architecture
-
-MRS uses a single canonical syntax (**MRS-S**) for all operations. There is no separate "working format"—instead, Working Set Envelopes extract bounded MRS-S fragments with scope metadata.
+## Core Components
 
 ```
-┌───────────────────────────────────────────────────────────────┐
-│                      MRS-S                                    │
-│              The Single Canonical Format                      │
-│                                                               │
-│ • Complete, hierarchical, self-documenting                    │
-│ • Used for storage, interchange, AND agent I/O                │
-└───────────────────────────────────────────────────────────────┘
-                            │
-                            ▼
-┌───────────────────────────────────────────────────────────────┐
-│               WORKING SET ENVELOPE                            │
-│                                                               │
-│ • Wraps a scoped MRS-S fragment                               │
-│ • Declares extraction boundaries (measures, parts)            │
-│ • Agent receives MRS-S, returns MRS-S                         │
-│ • Orchestrator does trivial replacement + validation          │
-└───────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                         MRS ECOSYSTEM                                │
+│                                                                      │
+│   ┌────────────────────────────────────────────────────────────┐    │
+│   │                        MRS-S                                │    │
+│   │                The Single Canonical Format                  │    │
+│   │                                                             │    │
+│   │ • Complete, hierarchical, self-documenting                  │    │
+│   │ • Measures and events indexed by stable UUIDs               │    │
+│   │ • Used for storage, interchange, AND agent I/O              │    │
+│   └────────────────────────────────────────────────────────────┘    │
+│                              │                                       │
+│              ┌───────────────┼───────────────┐                      │
+│              ▼               ▼               ▼                      │
+│   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐             │
+│   │   SYNOPSIS   │  │ WORKING SET  │  │   OVERLAYS   │             │
+│   │              │  │   ENVELOPE   │  │              │             │
+│   │ • Structural │  │              │  │ • Harmonic   │             │
+│   │   overview   │  │ • Scoped     │  │   analysis   │             │
+│   │ • Read-only  │  │   content    │  │ • Motivic    │             │
+│   │ • Derived    │  │ • Context    │  │   tracking   │             │
+│   │              │  │   rings      │  │ • Typed,     │             │
+│   │              │  │ • Scope      │  │   optional   │             │
+│   │              │  │   negotiation│  │              │             │
+│   └──────────────┘  └──────────────┘  └──────────────┘             │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-## The Scale Problem
+## The Context Problem
 
-Full scores can be far larger than practical context windows for humans or machine agents:
+Full scores are too large for context windows, but editing requires understanding surrounding material:
 
 | Score Type | Approx. Tokens |
 |------------|----------------|
@@ -41,13 +48,44 @@ Full scores can be far larger than practical context windows for humans or machi
 | Piano sonata | ~40K |
 | Full orchestra | ~1.5M |
 
-Editing typically targets a small region (a few parts, a measure range), not the whole score.
+Editing the clarinet part in measures 45-52 requires:
+- The melodic material being responded to
+- The harmonic context
+- Phrase boundaries
+- What comes before and after
 
-See: [`/MRS-Specification-RFC#3-2-why-two-formats`](/MRS-Specification-RFC#3-2-why-two-formats)
+See: [`/MRS-Specification-RFC#3-2-context-problem`](/MRS-Specification-RFC#3-2-context-problem)
+
+## The Solution: Context-Aware Extraction
+
+Working Set Envelopes extract:
+
+1. **Content**: Full-detail MRS-S for the edit region (writable)
+2. **Context rings**: Surrounding material at reduced detail (read-only)
+3. **Synopsis access**: Structural overview of the entire score (read-only)
+
+## Stable Identifiers
+
+Every measure, event, and span carries a stable UUIDv7 identifier:
+
+```clojure
+(measure 
+  :id #uuid "018c3f40-1234-7890-abcd-ef1234567890"
+  :number 45    ; Display property only
+  :beat-start 487+1/4
+  ...)
+```
+
+- `:id` — Stable identity, survives insertions/deletions
+- `:number` — Display property for human navigation
+
+All internal references use UUIDs. Measure numbers appear only in `:display-hint` fields.
+
+See: [`/MRS-Specification-RFC#3-3-stable-identifiers`](/MRS-Specification-RFC#3-3-stable-identifiers)
 
 ## Why One Format?
 
-MRS uses a single syntax for all operations. This provides:
+MRS uses a single syntax for all operations:
 
 | Benefit | Description |
 |---------|-------------|
@@ -56,6 +94,4 @@ MRS uses a single syntax for all operations. This provides:
 | Single parser | One grammar, one implementation |
 | No conversion | Agent I/O uses the same syntax as storage |
 
-**The insight**: agents don't need a different format—they need a different *scope*. A small MRS-S fragment is already compact enough.
-
-See: [`/MRS-Specification-RFC#3-3-format-selection-guidelines`](/MRS-Specification-RFC#3-3-format-selection-guidelines)
+**The insight**: agents don't need a different format—they need a different *scope* with appropriate *context*.

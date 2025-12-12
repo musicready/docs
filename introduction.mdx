@@ -7,8 +7,10 @@ description: "Motivation, goals, non-goals, and terminology for MRS."
 
 MRS (Music Representation Syntax) is a format for encoding musical scores optimized for AI-assisted composition workflows:
 
-- **MRS-S**: A single canonical format (S-expression based) for complete, archival-quality scores
-- **Working Set Envelopes**: Scoped MRS-S fragments with metadata for bounded agent operations
+- **MRS-S**: A single canonical format (S-expression based) for complete, archival-quality scores with stable UUID identifiers
+- **Working Set Envelopes**: Scoped MRS-S fragments with context rings for bounded agent operations
+- **Synopsis**: Compressed structural views providing global awareness
+- **Overlays**: Analytical metadata attached to score regions
 
 Agents receive valid MRS-S and return valid MRS-S—no second syntax, no format conversion, no parsing ambiguity.
 
@@ -16,26 +18,30 @@ See: [`/MRS-Specification-RFC#abstract`](/MRS-Specification-RFC#abstract)
 
 ## Motivation
 
-The RFC motivates MRS as a bridge between:
+MRS addresses two fundamental challenges in working with musical scores:
 
-- **Interchange formats** that are complete but verbose and difficult to edit at scale
-- **Compact notations** that are easy to type but lack a fully deterministic, semantically complete model
+**Scale**: A full orchestral score is too large for any context window. Editing measure 847 should not require loading measures 1-846.
 
-MRS explicitly targets the **scale problem**: editing should not require loading or reasoning about the entire score.
+**Context**: Musical decisions require understanding surrounding material. An agent writing a countermelody needs to know phrase boundaries, harmonic rhythm, and thematic relationships—not just the target measures in isolation.
 
-See: [`/MRS-Specification-RFC#1-1-motivation`](/MRS-Specification-RFC#1-1-motivation)
+MRS solves this through:
+- **Stable UUID identifiers** for measures and events (not position-dependent references)
+- **Context rings** providing surrounding material at graduated detail levels
+- **Synopsis** offering compressed structural views for global awareness
+- **A single canonical syntax** for all operations
+
+See: [`/MRS-Specification-RFC#1-introduction`](/MRS-Specification-RFC#1-introduction)
 
 ## Goals
 
-The RFC's goals include:
-
-1. **Semantic completeness**
-2. **Deterministic parsing**
-3. **Local reasoning**
-4. **Machine-friendly generation**
-5. **Human auditability**
-6. **Diff-friendly structure**
-7. **Renderer-agnostic semantics**
+1. **Semantic completeness**: Encode everything a professional engraver needs
+2. **Deterministic parsing**: One input → one parse tree, always
+3. **Structural stability**: UUID identifiers survive insertions and deletions
+4. **Context-aware operations**: Agents work with appropriate surrounding context
+5. **Machine-friendly generation**: Predictable patterns for reliable LLM output
+6. **Human auditability**: People can review and debug outputs
+7. **Diff-friendly structure**: Line-based changes produce meaningful diffs
+8. **Renderer-agnostic semantics**: Describe *what*, not *how to draw*
 
 See: [`/MRS-Specification-RFC#1-2-goals`](/MRS-Specification-RFC#1-2-goals)
 
@@ -60,10 +66,13 @@ Key terms used throughout the spec:
 | Part | A single instrument or voice throughout a score |
 | Staff | A visual grouping of five lines; parts may have multiple staves |
 | Voice | An independent melodic/rhythmic stream within a staff |
-| Measure | A metrical unit bounded by barlines |
-| Event | An atomic musical occurrence (note, rest, chord) |
+| Measure | A metrical unit bounded by barlines, identified by UUID |
+| Event | An atomic musical occurrence (note, rest, chord), identified by UUID |
 | Span | A relation connecting multiple events (slur, beam, hairpin) |
-| Working Set Envelope | A scoped MRS-S fragment with metadata for agent tasks |
+| Synopsis | A compressed structural view of the full score |
+| Working Set Envelope | A scoped MRS-S fragment with context for agent tasks |
+| Context Ring | Surrounding material at reduced detail level |
+| Overlay | Analytical metadata attached to score regions |
 | Orchestrator | System that coordinates agent tasks and manages the full score |
 
 See: [`/MRS-Specification-RFC#1-4-terminology`](/MRS-Specification-RFC#1-4-terminology)

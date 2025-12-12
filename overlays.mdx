@@ -1,0 +1,76 @@
+---
+title: "Analytical Overlays"
+description: "Typed analytical metadata attached to scores for agent workflows."
+---
+
+Overlays attach analytical metadata to scores. They provide structured information about harmonic content, motivic material, form, and other analytical dimensions.
+
+See: [`/MRS-Specification-RFC#7-analytical-overlays`](/MRS-Specification-RFC#7-analytical-overlays)
+
+## Characteristics
+
+Overlays are:
+
+- **Typed**: Different analysis types have different schemas
+- **Attributable**: Track provenance (author, timestamp)
+- **Optional**: Renderers ignore them; agents can use them
+- **Separable**: Can be recomputed without touching musical content
+
+## Structure
+
+```clojure
+(overlays
+  (overlay :id harmonic-analysis :author "analysis-agent"
+    :created "2025-12-12T10:30:00Z"
+    
+    (region 
+      :from #uuid "018c3f40-0001-..." 
+      :to #uuid "018c3f40-0004-..." 
+      :chord Cm :function i :cadence none)
+    (region 
+      :from #uuid "018c3f40-0005-..." 
+      :to #uuid "018c3f40-0008-..."
+      :chord Fm :function iv))
+  
+  (overlay :id motivic-analysis :author "theme-tracker"
+    (motive :id theme-a 
+      :signature [0 2 4 5 7] 
+      :contour [up up up down])
+    
+    (occurrence 
+      :measure #uuid "018c3f40-0001-..." 
+      :part violin-1 :voice v1 :beat 0 
+      :motive theme-a :transform original)
+    (occurrence 
+      :measure #uuid "018c3f40-0020-..." 
+      :part viola :voice v1 :beat 2
+      :motive theme-a :transform inversion))
+  
+  (overlay :id form-analysis :author "form-agent"
+    (section :type exposition
+      :from #uuid "018c3f40-0001-..." 
+      :to #uuid "018c3f40-0064-...")
+    (section :type development
+      :from #uuid "018c3f40-0065-..." 
+      :to #uuid "018c3f40-0120-...")))
+```
+
+## Overlay Types
+
+| Type | Content |
+|------|---------|
+| `harmonic-analysis` | Chord symbols, Roman numerals, cadences |
+| `motivic-analysis` | Theme definitions and occurrences |
+| `form-analysis` | Structural sections |
+| `voice-leading` | Part writing analysis |
+| `orchestration` | Doubling and texture analysis |
+
+## Operations
+
+Overlays can be:
+
+- **Created**: Agent analyzes score, produces overlay
+- **Queried**: Agent requests specific overlay
+- **Merged**: Multiple overlays combined
+- **Recomputed**: Overlay regenerated after score changes
+

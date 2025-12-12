@@ -1,10 +1,57 @@
 ---
 title: "Validation Rules"
-description: "Syntax, structural, musical, and span validation for MRS documents."
+description: "Syntax, structural, and musical validation rules for MRS documents."
 ---
 
-MRS defines validation rules to keep documents well-formed and musically coherent.
+See: [`/MRS-Specification-RFC#12-validation-rules`](/MRS-Specification-RFC#12-validation-rules)
 
-See: [`/MRS-Specification-RFC#9-validation-rules`](/MRS-Specification-RFC#9-validation-rules)
+## Syntax Validation
 
+- Document matches grammar
+- All required sections present
+- Version is supported
+- No malformed tokens
 
+## Structural Validation
+
+| Rule | Severity | Description |
+|------|----------|-------------|
+| STRUCT-001 | ERROR | Duplicate UUIDs |
+| STRUCT-002 | ERROR | Invalid measure numbers (non-positive) |
+| STRUCT-003 | ERROR | Invalid beat position |
+| STRUCT-004 | ERROR | Reference to non-existent UUID |
+| STRUCT-005 | ERROR | Missing required `:id` or `:at` |
+| STRUCT-006 | WARNING | Gap in measure numbering |
+| STRUCT-007 | WARNING | Empty measure |
+
+## Musical Validation
+
+| Rule | Severity | Description |
+|------|----------|-------------|
+| MUSIC-001 | ERROR | Tie connects different pitches |
+| MUSIC-002 | ERROR | Duration overflow |
+| MUSIC-003 | WARNING | Extreme pitch (outside practical range) |
+| MUSIC-004 | WARNING | Parallel fifths/octaves |
+| MUSIC-005 | WARNING | Voice crossing |
+| MUSIC-006 | WARNING | Large melodic leap |
+
+## Span Validation
+
+| Rule | Severity | Description |
+|------|----------|-------------|
+| SPAN-001 | ERROR | Span references non-existent UUID |
+| SPAN-002 | ERROR | Slur from/to identical |
+| SPAN-003 | WARNING | Slur spans more than 8 measures |
+| SPAN-004 | WARNING | Overlapping slurs |
+| SPAN-005 | FATAL | Boundary-anchored span modified |
+
+## Validation Levels
+
+```clojure
+ValidationLevel {
+  STRICT      ; All rules, errors and warnings stop processing
+  STANDARD    ; Errors stop, warnings are reported
+  LENIENT     ; Only errors stop processing
+  PERMISSIVE  ; Report all, stop on nothing
+}
+```

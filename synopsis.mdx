@@ -1,0 +1,94 @@
+---
+title: "Synopsis Format"
+description: "Compressed structural views providing global awareness for agent operations."
+---
+
+The Synopsis is a compressed structural view of the full score. It provides global context without full detail.
+
+See: [`/MRS-Specification-RFC#6-synopsis-format`](/MRS-Specification-RFC#6-synopsis-format)
+
+## Characteristics
+
+The Synopsis is:
+
+- **Derived**: Computed from full MRS-S
+- **Read-only**: Agents cannot modify it
+- **Lossy by design**: Context, not content
+
+## Structure
+
+```clojure
+(synopsis
+  :hash "sha256:abc123..."
+  :source-hash "sha256:def456..."
+  
+  :structure
+    (movement 1 :title "Allegro" 
+      :first-measure #uuid "018c3f40-0001-..." 
+      :last-measure #uuid "018c3f40-0144-..."
+      :display-range [1 324]
+      :key C :mode minor)
+  
+  :parts
+    (part violin-1 :section strings :range [G3 E7])
+    (part clarinet-1 :section woodwinds :transposition (down M2))
+  
+  :harmonic-spine
+    ((:measures #uuid "..." #uuid "..."
+      :key Cm :function i :display-range [1 8])
+     (:measures #uuid "..." #uuid "..."
+      :key Eb :function III :display-range [9 16]))
+  
+  :thematic-regions
+    ((theme-a 
+      :first-appearance #uuid "..."
+      :display-measure 1
+      :parts [violin-1] 
+      :recurrences [#uuid "..." #uuid "..."])
+     (theme-b 
+      :first-appearance #uuid "..."
+      :parts [cello]))
+  
+  :density-profile
+    ((:measures #uuid "..." #uuid "..."
+      :avg-events-per-beat 2.3 
+      :active-parts 4))
+  
+  :rehearsal-map
+    ((A #uuid "..." :display 1)
+     (B #uuid "..." :display 32)
+     (C #uuid "..." :display 64)))
+```
+
+## Synopsis Fields
+
+| Field | Description |
+|-------|-------------|
+| `:hash` | SHA-256 of the synopsis itself |
+| `:source-hash` | SHA-256 of the MRS-S it was derived from |
+| `:structure` | Movement/section boundaries |
+| `:parts` | Part summary (section, range, transposition) |
+| `:harmonic-spine` | Chord progression and key areas |
+| `:thematic-regions` | Theme appearances and recurrences |
+| `:density-profile` | Texture information by region |
+| `:rehearsal-map` | Rehearsal marks with UUID/measure mappings |
+
+## Access
+
+Working Set Envelopes reference the synopsis by hash:
+
+```clojure
+(working-set
+  ...
+  :synopsis-ref "sha256:abc123...")
+```
+
+Agents can query the orchestrator:
+
+```clojure
+(query
+  :type synopsis
+  :ref "sha256:abc123..."
+  :response (synopsis ...))
+```
+

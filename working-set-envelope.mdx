@@ -1,15 +1,18 @@
 ---
 title: "Working Set Envelope"
-description: "A scoped MRS-S fragment with metadata for bounded agent operations on full-scale scores."
+description: "A scoped MRS-S fragment with context rings for bounded agent operations on full-scale scores."
 ---
 
-The Working Set Envelope is the core mechanism for enabling agent workflows on scores of any size. It wraps a bounded MRS-S fragment with scope metadata, allowing agents to operate on a small portion of a score without loading the entire document.
+The Working Set Envelope is the core mechanism for enabling context-aware agent workflows. It wraps a bounded MRS-S fragment with scope metadata, context rings, and synopsis access.
 
 See: [`/MRS-Specification-RFC#5-working-set-envelope`](/MRS-Specification-RFC#5-working-set-envelope)
 
-## Key Principle
+## Key Principles
 
-**Agents receive valid MRS-S and return valid MRS-S.** There is no separate syntax, no abbreviations, no context-dependent parsing. The Working Set Envelope simply declares the boundaries of the extracted fragment.
+- **Agents receive valid MRS-S and return valid MRS-S**—no separate syntax
+- **Scopes use UUIDs**—not measure numbers—for structural stability
+- **Context rings** provide surrounding material at reduced detail
+- **Scope negotiation** enables flexible conversational workflows
 
 ## Structure
 
@@ -17,34 +20,63 @@ See: [`/MRS-Specification-RFC#5-working-set-envelope`](/MRS-Specification-RFC#5-
 (working-set
   :version 1.0
   :source-hash "sha256:..."
+  
   :scope
-    (:measures 45 52)
-    (:parts [violin-1 clarinet-1])
+    (:measures #uuid "018c3f40-002d-..." #uuid "018c3f40-0034-...")
+    (:parts [clarinet-1])
+  :display-hint (:measures 45 52)  ; Informational only
+  
   :context "Add countermelody to clarinet"
+  
   :constraints
     ((range clarinet-1 E3 G6)
      (avoid parallel-fifths violin-1))
   
   :content
-    ;; This is valid MRS-S — the same syntax as storage format
+    ;; Full-detail MRS-S — writable
     (meta :time 4/4 :key C :mode minor)
     (parts ...)
     (measures ...)
-    (spans ...))
+    (spans ...)
+  
+  :context-near
+    (:measures #uuid "..." #uuid "...")
+    :reduction :melodic-skeleton
+    :content (measures ...)  ; Reduced detail — read-only
+  
+  :context-far
+    (:measures #uuid "..." #uuid "...")
+    :reduction :harmonic-rhythm
+    :content (measures ...)  ; Further reduced — read-only
+  
+  :synopsis-ref "sha256:...")
 ```
 
-## Why One Syntax?
+## UUID-Based Scoping
 
-MRS uses a single syntax (MRS-S) for both storage and agent operations. This provides:
+All scope references use stable UUIDs:
 
-| Benefit | Description |
-|---------|-------------|
-| Unambiguous parsing | Every token has exactly one meaning |
-| Single implementation | One parser, one validator, one test suite |
-| Trivial replacement | Agent output substitutes directly into source |
-| Consistent tooling | Same syntax for storage, debugging, and diffing |
+```clojure
+:scope
+  (:measures #uuid "018c3f40-002d-..." #uuid "018c3f40-0034-...")
+  (:parts [clarinet-1])
+:display-hint (:measures 45 52)  ; Human-readable, never used structurally
+```
 
-The Working Set Envelope uses **the same syntax throughout**. Extraction and replacement become trivial operations.
+Measure numbers appear ONLY in `:display-hint`—never for structural reference.
+
+## Context Rings
+
+Context rings provide surrounding material at graduated detail levels:
+
+| Level | Content |
+|-------|---------|
+| `:full` | Everything (no reduction) |
+| `:melodic-skeleton` | Downbeats, phrase boundaries, structural tones |
+| `:harmonic-rhythm` | Chord roots, key changes, bass line |
+| `:structural` | Rehearsal marks, tempo changes, texture shifts only |
+
+All context ring content is **read-only**. Agents can read it but cannot modify it.
 
 ## Agent Response
 
@@ -54,22 +86,36 @@ Agents return a `working-set-response` containing valid MRS-S:
 (working-set-response
   :source-hash "sha256:..."
   :scope
-    (:measures 45 52)
+    (:measures #uuid "018c3f40-002d-..." #uuid "018c3f40-0034-...")
     (:parts [clarinet-1])
+  :display-hint (:measures 45 52)
   
   :content
     (measures
-      (measure 45
+      (measure 
+        :id #uuid "018c3f40-002d-..."
+        :number 45
+        :beat-start 487+1/4
         (clarinet-1
           (v1
-            (: 0 Eb4.q :dyn mp)
-            (: 1 D4.q)
+            (: 0 Eb4.q :dyn mp :id #uuid "..." :at 487+1/4)
             ...))))
   
   :rationale "Created contrary motion...")
 ```
 
-The orchestrator performs trivial replacement: delete the old scope, insert the new content, validate.
+## Scope Negotiation
 
-See: [`/MRS-Specification-RFC#5-4-agent-response-format`](/MRS-Specification-RFC#5-working-set-envelope)
+Agents can request scope adjustments:
 
+```clojure
+(scope-request
+  :reason "Phrase extends beyond current boundary"
+  :current (:measures #uuid "..." #uuid "...")
+  :requested (:measures #uuid "..." #uuid "...")
+  :justification "Slur endpoint at beat 487+3/4")
+```
+
+The orchestrator can grant, deny, or offer alternatives.
+
+See: [`/MRS-Specification-RFC#5-6-scope-negotiation-protocol`](/MRS-Specification-RFC#5-working-set-envelope)

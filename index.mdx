@@ -1,47 +1,40 @@
 ---
-title: "Overview"
-description: "High-level guide to MRS (Music Representation Syntax): an AI/agent-oriented score representation with scoped extraction for full-scale workflows."
+title: "MRS: Music Representation Syntax"
+description: "A format for encoding musical scores optimized for AI-assisted composition workflows."
 ---
 
-## What is MRS?
+# MRS: Music Representation Syntax
 
-**MRS (Music Representation Syntax)** is a format for encoding musical scores optimized for AI-assisted composition:
+MRS is a format for encoding musical scores optimized for AI-assisted composition workflows. It provides:
 
-- **MRS-S**: An S-expression-based format for complete, archival-quality scores
-- **Working Set Envelopes**: Scoped MRS-S fragments with metadata for bounded agent operations
+- **MRS-S**: A single canonical format (S-expression based) for complete, archival-quality scores with stable UUID identifiers
+- **Working Set Envelopes**: Scoped MRS-S fragments with context rings for bounded agent operations
+- **Synopsis**: Compressed structural views providing global awareness
+- **Overlays**: Analytical metadata attached to score regions
 
-**The key insight**: Agents don't need a different format—they need a different *scope*. MRS uses a single syntax throughout; Working Set Envelopes simply extract bounded fragments with explicit boundaries.
+## Key Features
 
-MRS is designed first and foremost to unlock **AI & agent-driven development workflows** on **full-scope musical scores**—where tools (and machine agents) can reliably read, modify, validate, and merge changes without needing the entire score in one context window. While the syntax is intentionally **human-auditable**, it is not primarily optimized for manual entry.
+### Stable Identity
+Every measure, event, and span carries a stable UUIDv7 identifier. Measure numbers are display properties—all internal references use UUIDs, ensuring structural stability through insertions, deletions, and reorderings.
 
-## How It Works
+### Context-Aware Extraction
+Working Set Envelopes provide not just the edit region, but graduated context rings with surrounding material at reduced detail, plus synopsis access for global structural awareness.
 
-```
-Full Score (MRS-S)                    Working Set Envelope
-┌─────────────────────────┐           ┌─────────────────────────┐
-│ 90 parts × 1000 measures│  extract  │ Scoped MRS-S fragment   │
-│ ~6 MB                   │ ────────► │ + scope metadata        │
-└─────────────────────────┘           └─────────────────────────┘
-                                                  │
-                                                  │ agent edits
-                                                  ▼
-                                      ┌─────────────────────────┐
-                                      │ Agent returns:          │
-                                      │ Valid MRS-S fragment    │
-                                      └─────────────────────────┘
-                                                  │
-┌─────────────────────────┐           replace +   │
-│ Updated full score      │ ◄──────── validate ───┘
-└─────────────────────────┘
-```
+### Single Syntax
+Agents receive valid MRS-S and return valid MRS-S. There is no second format, no abbreviations, no context-dependent parsing. Extraction and replacement are trivial operations.
 
-## How to use these docs
+### Sequential Workflow Support
+Composition is fundamentally sequential at the structural level. MRS supports fluid workflows where form and structure emerge through the creative process, with UUIDs ensuring reference stability.
 
-- **Start here**: [`/introduction`](/introduction) and [`/design-principles`](/design-principles)
-- **Learn MRS-S syntax**: [`/mrs-s/overview`](/mrs-s/overview)
-- **Understand agent workflows**: [`/working-set-envelope`](/working-set-envelope) and [`/agentic-operations`](/agentic-operations)
-- **Read the full RFC**: [`/MRS-Specification-RFC`](/MRS-Specification-RFC)
+## Quick Links
 
-## Normative source
+- [Introduction](/introduction) — Motivation, goals, and terminology
+- [Design Principles](/design-principles) — Core design philosophy
+- [Architecture Overview](/architecture-overview) — How components work together
+- [Quickstart](/quickstart) — Get started with MRS-S
 
-This site is an organized presentation of the RFC document in [`/MRS-Specification-RFC`](/MRS-Specification-RFC). Where wording matters, treat the RFC as the normative reference.
+## Specification
+
+The complete specification is available as an RFC:
+
+- [MRS Specification RFC](/MRS-Specification-RFC) — Full normative specification

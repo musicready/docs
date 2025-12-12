@@ -35,8 +35,11 @@
             "group": "Agent Workflows",
             "pages": [
               "working-set-envelope",
+              "synopsis",
+              "overlays",
               "extract-replace-protocol",
-              "agentic-operations"
+              "agentic-operations",
+              "query-resolution"
             ]
           },
           {

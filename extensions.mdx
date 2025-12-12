@@ -5,6 +5,47 @@ description: "How to extend MRS without breaking the core model."
 
 MRS provides explicit extension mechanisms to support additional domains while keeping a stable core.
 
-See: [`/MRS-Specification-RFC#10-extension-mechanisms`](/MRS-Specification-RFC#10-extension-mechanisms)
+See: [`/MRS-Specification-RFC#13-extension-mechanisms`](/MRS-Specification-RFC#13-extension-mechanisms)
 
+## Custom Properties
 
+Events, spans, and directions support custom properties with the `x-` prefix:
+
+```clojure
+(: 0 C4.q 
+  :id #uuid "..."
+  :at 0
+  :dyn f
+  :x-source "manuscript-page-47"
+  :x-confidence 0.85
+  :x-variant "A")
+```
+
+Custom properties:
+- MUST begin with `x-`
+- MUST have string, number, boolean, or array values
+- SHOULD be documented by the creating system
+- MAY be ignored by systems that don't recognize them
+
+## Namespace Extensions
+
+For complex extensions, use namespaced properties:
+
+```clojure
+(: 0 C4.q
+  :id #uuid "..." :at 0
+  :analysis:roman-numeral "I"
+  :analysis:function "tonic"
+  :mei:xml-id "note-001")
+```
+
+## Registered Namespaces
+
+| Namespace | Purpose |
+|-----------|---------|
+| `x-*` | Unregistered extensions |
+| `analysis:*` | Music theory analysis |
+| `mei:*` | MEI compatibility |
+| `midi:*` | MIDI-specific data |
+| `render:*` | Rendering hints |
+| `edit:*` | Editorial metadata |
