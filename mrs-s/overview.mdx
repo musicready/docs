@@ -1,0 +1,24 @@
+---
+title: "MRS-S Overview"
+description: "The complete, archival storage format (hierarchical S-expression)."
+---
+
+MRS-S is an S-expression-based format optimized for complete semantic fidelity, clear hierarchy, readability, and straightforward parsing.
+
+See: [`/MRS-Specification-RFC#4-1-overview`](/MRS-Specification-RFC#4-1-overview)
+
+## Top-level structure
+
+```clojure
+(mrs-s <version>
+  (meta <metadata>)
+  (parts <part-definitions>)
+  (measures <measure-content>)      ; OR (movements <movement-content>)
+  (spans <span-definitions>)
+  (alternatives <alt-content>)      ; OPTIONAL
+  (layout <layout-hints>))          ; OPTIONAL
+```
+
+See: [`/MRS-Specification-RFC#4-2-document-structure`](/MRS-Specification-RFC#4-2-document-structure)
+
+

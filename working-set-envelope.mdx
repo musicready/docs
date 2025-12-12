@@ -1,0 +1,75 @@
+---
+title: "Working Set Envelope"
+description: "A scoped MRS-S fragment with metadata for bounded agent operations on full-scale scores."
+---
+
+The Working Set Envelope is the core mechanism for enabling agent workflows on scores of any size. It wraps a bounded MRS-S fragment with scope metadata, allowing agents to operate on a small portion of a score without loading the entire document.
+
+See: [`/MRS-Specification-RFC#5-working-set-envelope`](/MRS-Specification-RFC#5-working-set-envelope)
+
+## Key Principle
+
+**Agents receive valid MRS-S and return valid MRS-S.** There is no separate syntax, no abbreviations, no context-dependent parsing. The Working Set Envelope simply declares the boundaries of the extracted fragment.
+
+## Structure
+
+```clojure
+(working-set
+  :version 1.0
+  :source-hash "sha256:..."
+  :scope
+    (:measures 45 52)
+    (:parts [violin-1 clarinet-1])
+  :context "Add countermelody to clarinet"
+  :constraints
+    ((range clarinet-1 E3 G6)
+     (avoid parallel-fifths violin-1))
+  
+  :content
+    ;; This is valid MRS-S — the same syntax as storage format
+    (meta :time 4/4 :key C :mode minor)
+    (parts ...)
+    (measures ...)
+    (spans ...))
+```
+
+## Why One Syntax?
+
+MRS uses a single syntax (MRS-S) for both storage and agent operations. This provides:
+
+| Benefit | Description |
+|---------|-------------|
+| Unambiguous parsing | Every token has exactly one meaning |
+| Single implementation | One parser, one validator, one test suite |
+| Trivial replacement | Agent output substitutes directly into source |
+| Consistent tooling | Same syntax for storage, debugging, and diffing |
+
+The Working Set Envelope uses **the same syntax throughout**. Extraction and replacement become trivial operations.
+
+## Agent Response
+
+Agents return a `working-set-response` containing valid MRS-S:
+
+```clojure
+(working-set-response
+  :source-hash "sha256:..."
+  :scope
+    (:measures 45 52)
+    (:parts [clarinet-1])
+  
+  :content
+    (measures
+      (measure 45
+        (clarinet-1
+          (v1
+            (: 0 Eb4.q :dyn mp)
+            (: 1 D4.q)
+            ...))))
+  
+  :rationale "Created contrary motion...")
+```
+
+The orchestrator performs trivial replacement: delete the old scope, insert the new content, validate.
+
+See: [`/MRS-Specification-RFC#5-4-agent-response-format`](/MRS-Specification-RFC#5-working-set-envelope)
+

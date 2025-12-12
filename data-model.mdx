@@ -1,0 +1,63 @@
+---
+title: "Data Model"
+description: "The canonical model underlying MRS-S and Working Set Envelopes."
+---
+
+MRS-S and Working Set Envelopes serialize the same underlying data model. Working Sets simply extract a bounded subset of this model.
+
+See: [`/MRS-Specification-RFC#6-data-model`](/MRS-Specification-RFC#6-data-model)
+
+## Core entities (overview)
+
+At a high level, the model consists of:
+
+- **Score**: metadata, ordered parts, ordered measures, spans (and optional layout hints)
+- **Part**: identity, staves/clefs, section, optional transposition/range, attributes
+- **Measure**: musical context and per-part content
+- **Event**: beat-positioned atomic occurrence with pitch/duration and properties
+- **Span**: typed relations between event references
+- **Direction**: typed directions attached to temporal positions
+
+See: [`/MRS-Specification-RFC#6-2-core-entities`](/MRS-Specification-RFC#6-2-core-entities)
+
+## Invariants
+
+The RFC defines invariants that must hold for valid documents, including:
+
+1. Unique part IDs
+2. Sequential positive measure numbers (gaps allowed)
+3. Beat bounds: beat ≥ 0 and < measure duration
+4. Duration sum within a voice should not exceed the measure duration
+5. Tie pitch match
+6. Span endpoints must reference existing events
+7. Voice consistency (no temporal overlap)
+
+See: [`/MRS-Specification-RFC#6-3-invariants`](/MRS-Specification-RFC#6-3-invariants)
+
+## Event identity and referencing
+
+Events may be referenced by:
+
+- **Derived path reference**, e.g.:
+
+```text
+[m45 violin-1 v1 b2.5]
+```
+
+- **Explicit ID** preserved across transformations, e.g.:
+
+```clojure
+(: 2.5 G4.q :id "theme-a-start")
+```
+
+See: [`/MRS-Specification-RFC#6-4-event-identity`](/MRS-Specification-RFC#6-4-event-identity)
+
+## Temporal model
+
+MRS uses a **measure-relative beat model**:
+
+- Beat 0 is the first beat of the measure
+- Beat positions are decimals (e.g., 1.5)
+- Measure duration derives from the time signature
+
+See: [`/MRS-Specification-RFC#6-5-temporal-model`](/MRS-Specification-RFC#6-5-temporal-model)

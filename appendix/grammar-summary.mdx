@@ -1,0 +1,27 @@
+---
+title: "Appendix: Grammar Summary"
+description: "Key productions for MRS-S and Working Set Envelopes."
+---
+
+See: [`/MRS-Specification-RFC#appendix-a-complete-grammar-summary`](/MRS-Specification-RFC#appendix-a-complete-grammar-summary)
+
+## MRS-S Key Productions
+
+```peg
+document  <- '(' 'mrs-s' version meta parts measures spans? layout? ')'
+event     <- '(' ':' beat pitch-expr properties* ')'
+pitch     <- STEP ACCIDENTAL? OCTAVE '.' DURATION
+chord     <- '[' pitch+ ']' '.' DURATION
+span      <- '(' span-type ':from' ref ':to' ref attributes* ')'
+ref       <- '[' 'm' INT part-id voice-id? 'b' FLOAT ']'
+```
+
+## Working Set Envelope Key Productions
+
+```peg
+envelope  <- '(' 'working-set' version scope context? constraints? ':content' mrs-s-fragment ')'
+response  <- '(' 'working-set-response' task-id status scope ':content' mrs-s-fragment rationale? ')'
+scope     <- '(' ':scope' measures-spec parts-spec voices-spec? ')'
+```
+
+The `:content` of both envelope and response is valid MRS-S—no separate grammar required.

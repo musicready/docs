@@ -1,0 +1,40 @@
+---
+title: "Design Principles"
+description: "The core principles that shape MRS-S and the Working Set Envelope model."
+---
+
+This page summarizes the design principles stated in the RFC. For normative wording, see: [`/MRS-Specification-RFC#2-design-principles`](/MRS-Specification-RFC#2-design-principles).
+
+## Explicit over implicit
+
+- Musical position is **stated**, not inferred (beat positions are explicit).
+- Voice assignment is **declared**, not guessed.
+
+Rationale: implicit state can cascade into large misalignments; explicit positions are independently verifiable.
+
+## Local over global
+
+- References are **path-based** (e.g., `m45.violin.b2`) rather than global opaque IDs.
+- Measures are intended to be **self-contained** and independently parseable.
+
+Rationale: global state makes edits fragile; path-based references survive insertions/deletions without renumbering.
+
+## Semantic over visual
+
+- Encode **meaning** (e.g., crescendo as start/end + type), not visual coordinates.
+
+Rationale: rendering is context-dependent; semantics remain stable across rendering contexts.
+
+## Predictable over clever
+
+- Prefer **regular patterns** to reduce generation and editing errors.
+
+Rationale: consistent syntax improves reliability (especially for machine generation).
+
+## One format, scoped extraction
+
+- MRS uses a **single syntax** (MRS-S) for all operations.
+- Working Set Envelopes extract **bounded fragments** with scope metadata.
+- Agents receive MRS-S and return MRS-S—no format conversion.
+
+Rationale: maintaining two syntaxes creates parsing complexity, abbreviation ambiguity, and merge conflicts. A single syntax means extraction and replacement are trivial operations.

@@ -1,0 +1,72 @@
+---
+title: "Quickstart"
+description: "Write a score in MRS-S and use Working Set Envelopes for agent-driven editing."
+---
+
+## MRS-S: The Single Format
+
+MRS uses **one syntax** for all operations. There is no separate "working format"—agents receive and return valid MRS-S.
+
+  See: [`/mrs-s/overview`](/mrs-s/overview) and [`/MRS-Specification-RFC#4-mrs-s-storage-format`](/MRS-Specification-RFC#4-mrs-s-storage-format)
+
+## File Types
+
+- **MIME type**: `application/vnd.mrs+sexpr`
+- **Extensions**: `.mrs` or `.mrs-s`
+- **Encoding**: UTF-8 (BOM should not be used)
+
+See: [`/MRS-Specification-RFC#11-mime-types-and-file-extensions`](/MRS-Specification-RFC#11-mime-types-and-file-extensions)
+
+## Minimal MRS-S Skeleton
+
+```clojure
+(mrs-s 1.1
+  (meta
+    :title "Untitled")
+  (parts
+    ; (part ...)
+  )
+  (measures
+    ; (measure ...)
+  )
+  (spans
+    ; spans may be empty depending on content
+  ))
+```
+
+See: [`/MRS-Specification-RFC#4-2-document-structure`](/MRS-Specification-RFC#4-2-document-structure)
+
+## Working Set Envelope for Agent Tasks
+
+For agent operations, the orchestrator extracts a **Working Set Envelope**—a scoped MRS-S fragment with metadata:
+
+```clojure
+(working-set
+  :version 1.0
+  :source-hash "sha256:..."
+  :scope
+    (:measures 1 8)
+    (:parts [violin-1 flute-1])
+  :context "Add countermelody to flute"
+  
+  :content
+    (meta :time 4/4 :key C :mode minor :tempo 132)
+    (parts
+      (part violin-1 :name "Violin 1" :abbr "Vln. 1" :staves [treble])
+      (part flute-1 :name "Flute 1" :abbr "Fl. 1" :staves [treble]))
+    (measures
+      (measure 1
+        (violin-1 (v1 (: 0 C4.q) (: 1 D4.q) (: 2 E4.q) (: 3 F4.q)))
+        (flute-1 (v1)))))  ; Empty — target for agent
+```
+
+See: [`/working-set-envelope`](/working-set-envelope) and [`/MRS-Specification-RFC#5-working-set-envelope`](/MRS-Specification-RFC#5-working-set-envelope)
+
+## Agent Workflow (Extract → Edit → Replace)
+
+1. **Extract**: Create Working Set Envelope from MRS-S with explicit scope
+2. **Send to agent**: Agent receives valid MRS-S in the envelope
+3. **Agent returns**: Valid MRS-S fragment for the modified scope
+4. **Replace**: Orchestrator does trivial substitution + validation
+
+See: [`/extract-replace-protocol`](/extract-replace-protocol) and [`/MRS-Specification-RFC#7-extract-replace-protocol`](/MRS-Specification-RFC#7-extract-replace-protocol)

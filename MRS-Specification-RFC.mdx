@@ -1,0 +1,2440 @@
+---
+title: "MRS: Music Representation Syntax"
+---
+
+## RFC 0001 — Version 0.2
+
+**Status:** Draft  
+**Created:** 2025-12-12  
+**Authors:** MRS Working Group  
+**License:** CC BY 4.0  
+
+---
+
+## Abstract
+<a id="abstract"></a>
+
+This document specifies MRS (Music Representation Syntax), a format for encoding musical scores optimized for AI-assisted composition workflows. MRS uses a single canonical syntax (**MRS-S**) for complete, archival-quality score encoding, combined with a **Working Set Envelope** protocol that enables machine agents to operate on bounded fragments of scores without loading entire documents into context.
+
+The key insight is that agents don't need a different format—they need a different *scope*. The Working Set Envelope extracts a minimal, self-contained MRS-S fragment with explicit boundaries. Agents receive valid MRS-S, return valid MRS-S, and the orchestrator performs trivial replacement with full validation. This eliminates parsing complexity, abbreviation ambiguity, and merge conflicts that would arise from maintaining two different syntaxes.
+
+The specification prioritizes semantic completeness, deterministic parsing, and lossless extract-replace round-trips. MRS is designed to serve as a universal interchange format and as the native representation for AI-assisted and agent-driven workflows over full scores at professional scale.
+
+---
+
+## Table of Contents
+
+1. [Introduction](#1-introduction)
+2. [Design Principles](#2-design-principles)
+3. [Architecture Overview](#3-architecture-overview)
+4. [MRS-S: The Canonical Format](#4-mrs-s-storage-format)
+5. [Working Set Envelope](#5-working-set-envelope)
+6. [Data Model](#6-data-model)
+7. [Extract-Replace Protocol](#7-extract-replace-protocol)
+8. [Agentic Operations](#8-agentic-operations)
+9. [Validation Rules](#9-validation-rules)
+10. [Extension Mechanisms](#10-extension-mechanisms)
+11. [MIME Types and File Extensions](#11-mime-types-and-file-extensions)
+12. [Security Considerations](#12-security-considerations)
+13. [Appendix A: Complete Grammar](#appendix-a-complete-grammar)
+14. [Appendix B: Canonical Examples](#appendix-b-canonical-examples)
+15. [Appendix C: Comparison with Existing Formats](#appendix-c-comparison-with-existing-formats)
+
+---
+
+## 1. Introduction
+
+### 1.1 Motivation
+<a id="1-1-motivation"></a>
+
+Existing music notation formats fall into two categories:
+
+**Interchange formats** (MusicXML, MEI) prioritize completeness but are verbose, difficult to parse, and hostile to both human editing and machine learning workflows. A simple four-bar melody may require hundreds of lines of XML.
+
+**Compact formats** (ABC notation, LilyPond) optimize for human entry but sacrifice semantic precision, lack formal grammars, and cannot represent the full complexity of professional scores.
+
+Neither category addresses the fundamental challenge of **scale**: a full orchestral score contains too much information for any single context window, human or machine. Editing measure 847 should not require loading measures 1-846 into memory.
+
+MRS solves this through a **single canonical format** combined with a **scoped extraction protocol**:
+
+- **MRS-S** provides complete, unambiguous encoding of any score
+- **Working Set Envelopes** extract bounded, self-contained MRS-S fragments for agent tasks
+- Agents receive and return **valid MRS-S**—no second syntax, no parsing ambiguity
+- A formal **extract-replace protocol** guarantees lossless round-trips via trivial substitution
+
+### 1.2 Goals
+<a id="1-2-goals"></a>
+
+1. **Semantic completeness**: Encode everything a professional engraver needs
+2. **Deterministic parsing**: One input → one parse tree, always
+3. **Local reasoning**: Edit a measure without understanding the whole score
+4. **Machine-friendly**: Predictable patterns for reliable LLM/agent generation
+5. **Human-auditable**: People can review and debug outputs, but the syntax is not primarily optimized for manual authoring
+6. **Diff-friendly**: Line-based changes produce meaningful diffs
+7. **Renderer-agnostic**: Describe *what*, not *how to draw*
+
+### 1.3 Non-Goals
+<a id="1-3-non-goals"></a>
+
+1. Encoding visual layout (page breaks, staff spacing, collision avoidance)
+2. Providing a programming language (no loops, conditionals, macros)
+3. Defining audio synthesis or playback behavior
+4. Replacing domain-specific formats (MIDI, audio, engraving source)
+
+### 1.4 Terminology
+<a id="1-4-terminology"></a>
+
+The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in RFC 2119.
+
+| Term | Definition |
+|------|------------|
+| Score | A complete musical work in MRS format |
+| Part | A single instrument or voice throughout a score |
+| Staff | A visual grouping of five lines; parts may have multiple staves |
+| Voice | An independent melodic/rhythmic stream within a staff |
+| Measure | A metrical unit bounded by barlines |
+| Event | An atomic musical occurrence (note, rest, chord) |
+| Span | A relation connecting multiple events (slur, beam, hairpin) |
+| Working Set | A subset of a score extracted for editing |
+
+---
+
+## 2. Design Principles
+<a id="2-design-principles"></a>
+
+### 2.1 Explicit Over Implicit
+
+Every musical element has an explicit representation. Position in the measure is stated, not inferred from accumulated durations. Voice assignment is declared, not guessed from stem direction.
+
+**Rationale**: Implicit state creates cascading errors. If an LLM miscounts one duration, all subsequent events are misaligned. Explicit positions are independently verifiable.
+
+### 2.2 Local Over Global
+
+References use path-based addressing (`m45.violin.b2`) rather than global identifiers (`#4721`). Each measure is self-contained and independently parseable.
+
+**Rationale**: Global IDs require tracking state across the entire document. Path-based references survive insertions and deletions without renumbering.
+
+### 2.3 Semantic Over Visual
+
+MRS encodes musical meaning, not visual appearance. A crescendo is marked with start/end points and type, not with specific hairpin coordinates.
+
+**Rationale**: Visual rendering is context-dependent (page size, staff spacing, font). Semantic encoding remains valid across all rendering contexts.
+
+### 2.4 Predictable Over Clever
+
+The format uses regular patterns even when more compact alternatives exist. Every note uses the same syntax regardless of context.
+
+**Rationale**: LLMs generate more reliably when patterns are consistent. A 10% size reduction is not worth a 50% increase in generation errors.
+
+### 2.5 One Format, Scoped Extraction
+
+MRS uses a single syntax (MRS-S) for all operations. Working sets are not a different format—they are bounded MRS-S fragments wrapped in an extraction envelope.
+
+**Rationale**: Maintaining two syntaxes creates parsing complexity, abbreviation ambiguity, and merge conflicts. A single syntax means agents receive what they return: valid MRS-S. Extraction and replacement become trivial operations, eliminating an entire class of conversion bugs.
+
+---
+
+## 3. Architecture Overview
+<a id="3-architecture-overview"></a>
+
+MRS is designed to make **agent-driven development** on **full-scope scores** practical: tools and machine agents can operate on bounded fragments (working sets), validate changes deterministically, and replace them back into the canonical score representation without needing the entire work in memory or context.
+
+### 3.1 The Single-Format Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         MRS ECOSYSTEM                           │
+│                                                                 │
+│   ┌───────────────────────────────────────────────────────┐    │
+│   │                      MRS-S                             │    │
+│   │              The Single Canonical Format               │    │
+│   │                                                        │    │
+│   │ • Complete, hierarchical, self-documenting             │    │
+│   │ • Events indexed by (measure, part, voice, beat)       │    │
+│   │ • Spans as typed edges between events                  │    │
+│   │ • Used for storage, interchange, AND agent I/O         │    │
+│   └───────────────────────────────────────────────────────┘    │
+│                             │                                   │
+│                             ▼                                   │
+│   ┌───────────────────────────────────────────────────────┐    │
+│   │               WORKING SET ENVELOPE                     │    │
+│   │                                                        │    │
+│   │ • Wraps a scoped MRS-S fragment                        │    │
+│   │ • Declares extraction boundaries (measures, parts)     │    │
+│   │ • Agent receives MRS-S, returns MRS-S                  │    │
+│   │ • Orchestrator does trivial replacement + validation   │    │
+│   └───────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 3.2 The Scale Problem
+<a id="3-2-why-two-formats"></a>
+
+A full orchestral score is fundamentally too large for efficient manipulation:
+
+| Score Type | Parts | Measures | Events | MRS-S Size | Tokens |
+|------------|-------|----------|--------|------------|--------|
+| Lead sheet | 1 | 32 | ~200 | ~8 KB | ~2K |
+| Piano sonata | 2 | 300 | ~5,000 | ~150 KB | ~40K |
+| String quartet | 4 | 400 | ~8,000 | ~250 KB | ~65K |
+| Choral + piano | 6 | 100 | ~3,000 | ~100 KB | ~25K |
+| Chamber orchestra | 25 | 500 | ~50,000 | ~1.5 MB | ~400K |
+| Full orchestra | 90 | 1000 | ~200,000 | ~6 MB | ~1.5M |
+
+No LLM context window (current or foreseeable) can hold a full orchestral score. More importantly, *it shouldn't have to*. Editing the clarinet part in measures 45-52 does not require the tuba part from measure 300.
+
+**The Solution: Scoped Extraction**
+
+The Working Set Envelope extracts a bounded, self-contained MRS-S fragment. The agent operates on real MRS-S syntax and returns real MRS-S syntax. No format conversion, no abbreviation expansion, no ambiguity.
+
+```
+Full Score (MRS-S)                    Working Set Envelope
+┌─────────────────────────┐           ┌─────────────────────────┐
+│ 90 parts × 1000 measures│  extract  │ (working-set            │
+│ ~200,000 events         │ ────────► │   :source-hash "abc..." │
+│ ~6 MB                   │           │   :scope (measures 45 52)│
+│                         │           │          (parts [vln1]) │
+└─────────────────────────┘           │   :content              │
+                                      │     ;; VALID MRS-S      │
+                                      │     (measures           │
+                                      │       (measure 45 ...)  │
+                                      │       ...))             │
+                                      └─────────────────────────┘
+                                                    │
+                                                    │ agent edits
+                                                    ▼
+                                      ┌─────────────────────────┐
+                                      │ Agent returns:          │
+                                      │ VALID MRS-S FRAGMENT    │
+                                      │ (measures               │
+                                      │   (measure 45 ...)      │
+                                      │   ...)                  │
+                                      └─────────────────────────┘
+                                                    │
+┌─────────────────────────┐           replace +     │
+│ Updated full score      │ ◄──────── validate ─────┘
+│ with changes applied    │
+└─────────────────────────┘
+```
+
+### 3.3 Why One Format?
+<a id="3-3-format-selection-guidelines"></a>
+
+MRS uses a single syntax for all operations. Agents receive MRS-S and return MRS-S. This design provides:
+
+| Benefit | Description |
+|---------|-------------|
+| No abbreviation ambiguity | Full MRS-S syntax is unambiguous and deterministic |
+| Trivial merge logic | Scope replacement: delete old, insert new, validate |
+| Single parser | One grammar, one test suite, one codebase |
+| Consistent tooling | Same syntax for storage, agent I/O, and debugging |
+| Simple conflict handling | Orchestrator serializes overlapping scopes |
+
+The fundamental insight: **agents don't need a different format—they need a different scope**. A small MRS-S fragment is already compact enough for context windows.
+
+### 3.7 Stable Identifiers
+<a id="3-7-stable-identifiers"></a>
+
+Every Event and every Span in a full MRS-S score MUST carry a stable identifier in the form of a UUIDv7 (monotonic + random) under the key `:id`.
+
+**Event identifiers:**
+```clojure
+(: 0 C5.q :dyn p :id #uuid "018c3f2a-1234-7890-abcd-ef1234567890")
+(: 1 D5.q :id #uuid "018c3f2b-5678-9012-cdef-0123456789ab")
+```
+
+**Span identifiers:**
+```clojure
+(slur 
+  :id #uuid "018c3f2c-9abc-def0-1234-567890abcdef"
+  :from #uuid "018c3f2a-1234-7890-abcd-ef1234567890"
+  :to #uuid "018c3f2b-5678-9012-cdef-0123456789ab"
+  :style legato)
+```
+
+All references (slur, tie, pedal, text repeat, etc.) MUST use `:id` references when stable identifiers exist. Structural position references (`[m12 vln-1 v1 b2.5]`) remain allowed only inside envelopes where the referenced object has no `:id` yet (i.e., newly created objects before first commit).
+
+On first replace of an envelope, the orchestration layer MUST assign stable `:id`s to any new objects that lack them and rewrite all internal structural references to `:id` references before merging.
+
+Once assigned, an `:id` is immutable for the lifetime of the score.
+
+### 3.8 Dual Positioning Model
+<a id="3-8-dual-positioning-model"></a>
+
+Every part MUST contain a parallel absolute time spine expressed in two units:
+
+- `:beat` – rational number of quarter-notes since the start of the part (using ratio syntax, e.g., `1234+1/2`).
+- `:sec` – floating-point seconds since start (optional, but REQUIRED if any tempo automation exists).
+
+Every event and span endpoint MUST carry both:
+
+- Structural position `[m12 vln-1 v1 b2.5]` (for human navigation and measure-level scoping).
+- Absolute position `:at 487+3/8` (for meter-agnostic reasoning).
+
+**Example with dual positioning:**
+```clojure
+(measure 12
+  :beat-start 487+1/4    ; Absolute position in quarter-notes
+  :sec-start 121.5       ; Absolute position in seconds (if tempo automation exists)
+  
+  (violin-1
+    (v1
+      (: 0 C5.q 
+        :at 487+1/4      ; Absolute beat position
+        :id #uuid "018c3f2a-...")
+      (: 1 D5.q 
+        :at 487+1/2     ; Absolute beat position
+        :id #uuid "018c3f2b-..."))))
+```
+
+Envelope extraction MUST preserve both coordinates.
+
+All validation rules that involve timing (overlaps, span endpoints, etc.) MUST be checked against the absolute `:beat` spine; the measure/barline structure is treated as a presentation layer only.
+
+This makes the format safe for metric modulations, polymeter, pickup bars, and agents that reason in continuous time rather than measure grids.
+
+## 4. MRS-S: Storage Format
+<a id="4-mrs-s-storage-format"></a>
+
+### 4.1 Overview
+<a id="4-1-overview"></a>
+
+MRS-S is an S-expression-based format optimized for:
+
+- Complete semantic fidelity
+- Clear hierarchical structure
+- Self-documenting readability
+- Straightforward parsing
+
+### 4.2 Document Structure
+<a id="4-2-document-structure"></a>
+
+```clojure
+(mrs-s <version>
+  (meta <metadata>)
+  (parts <part-definitions>)
+  (measures <measure-content>)      ; OR (movements <movement-content>)
+  (spans <span-definitions>)
+  (alternatives <alt-content>)      ; OPTIONAL (ossia, variants, editorials)
+  (layout <layout-hints>))          ; OPTIONAL
+```
+
+All top-level sections except `alternatives` and `layout` are REQUIRED. Sections MUST appear in the order shown.
+
+If `movements` is used, it replaces the top-level `measures` section and each movement contains its own `(measures ...)` block.
+
+### 4.3 Version Declaration
+
+```clojure
+(mrs-s 1.1
+  ...)
+```
+
+The version number follows semantic versioning (MAJOR.MINOR). Parsers MUST reject documents with unsupported major versions and SHOULD warn on unknown minor versions.
+
+### 4.4 Metadata Section
+<a id="4-4-metadata-section"></a>
+
+```clojure
+(meta
+  :title "Symphony No. 5 in C Minor"
+  :subtitle "Fate Knocking at the Door"
+  :composers ["Ludwig van Beethoven"]
+  :arrangers []
+  :lyricists []
+  :copyright "Public Domain"
+  :created "1808"
+  :modified "2025-12-12T10:30:00Z"
+  :source "Breitkopf & Härtel, 1862"
+  :language "de"
+  :tags ["symphony" "classical" "orchestral"]
+  
+  ; Score-wide defaults
+  :key C :mode minor
+  :time 2/4
+  :tempo 108
+  :tempo-text "Allegro con brio")
+```
+
+#### 4.4.1 Required Metadata Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `:title` | string | Primary title of the work |
+
+#### 4.4.2 Optional Metadata Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `:subtitle` | string | Secondary title |
+| `:composers` | [string] | List of composer names |
+| `:arrangers` | [string] | List of arranger names |
+| `:lyricists` | [string] | List of lyricist names |
+| `:copyright` | string | Copyright notice |
+| `:created` | string | Original creation date |
+| `:modified` | ISO 8601 | Last modification timestamp |
+| `:source` | string | Source edition reference |
+| `:language` | ISO 639-1 | Primary language for lyrics |
+| `:tags` | [string] | Classification tags |
+| `:key` | pitch-class | Default key (A-G with optional #/b) |
+| `:mode` | keyword | `major`, `minor`, `dorian`, etc. |
+| `:time` | fraction | Default time signature |
+| `:tempo` | integer | Default tempo in BPM |
+| `:tempo-text` | string | Tempo marking text |
+
+### 4.5 Parts Section
+<a id="4-5-parts-section"></a>
+
+```clojure
+(parts
+  (part flute-1
+    :name "Flute 1"
+    :abbr "Fl. 1"
+    :staves [treble]
+    :section woodwinds
+    :midi-program 73
+    :transposition none
+    :range [C4 D7])
+  
+  (part clarinet-bb
+    :name "Clarinet in B♭"
+    :abbr "Cl."
+    :staves [treble]
+    :section woodwinds
+    :midi-program 71
+    :transposition (down M2)    ; Sounds M2 lower than written
+    :range [D3 Bb6])            ; Written range
+  
+  (part piano
+    :name "Piano"
+    :abbr "Pno."
+    :staves [treble bass]
+    :section keyboards
+    :midi-program 0
+    :transposition none
+    :range [A0 C8]
+    :staff-connect brace)
+    
+  (part soprano
+    :name "Soprano"
+    :abbr "S"
+    :staves [treble]
+    :section voices
+    :has-lyrics true
+    :range [C4 C6])
+)
+```
+
+#### 4.5.1 Part Identifier
+
+The part identifier (e.g., `flute-1`, `clarinet-bb`) MUST be unique within the score and MUST match the regex `[a-z][a-z0-9-]*`.
+
+#### 4.5.2 Part Attributes
+
+| Attribute | Required | Type | Description |
+|-----------|----------|------|-------------|
+| `:name` | YES | string | Full display name |
+| `:abbr` | YES | string | Abbreviated name for systems |
+| `:staves` | YES | [clef] | List of staff clefs |
+| `:section` | NO | keyword | Instrument family grouping |
+| `:midi-program` | NO | 0-127 | General MIDI program number |
+| `:transposition` | NO | interval | Transposition from written to sounding |
+| `:range` | NO | [pitch pitch] | Playable range (written pitch) |
+| `:has-lyrics` | NO | boolean | Whether part carries lyrics |
+| `:staff-connect` | NO | keyword | `brace`, `bracket`, `line`, `none` |
+
+#### 4.5.3 Clef Values
+
+```
+treble      ; G clef, line 2
+bass        ; F clef, line 4  
+alto        ; C clef, line 3
+tenor       ; C clef, line 4
+treble-8va  ; G clef, octave up
+treble-8vb  ; G clef, octave down
+bass-8vb    ; F clef, octave down
+percussion  ; Neutral clef
+tab-6       ; 6-string tablature
+tab-4       ; 4-string tablature
+```
+
+#### 4.5.4 Section Values
+
+```
+woodwinds brass strings percussion
+keyboards voices choir other
+```
+
+#### 4.5.5 Transposition Specification
+
+```clojure
+none                    ; Concert pitch (no transposition)
+(up <interval>)         ; Sounds higher than written
+(down <interval>)       ; Sounds lower than written
+
+; Interval format: quality + number
+; Quality: P (perfect), M (major), m (minor), A (augmented), d (diminished)
+; Number: 1-15
+
+; Examples:
+(down M2)     ; Bb clarinet: written C sounds Bb
+(up P5)       ; Horn in F (old notation): written C sounds G
+(down m3)     ; A clarinet: written C sounds A
+(down P8)     ; Double bass: sounds octave lower
+```
+
+### 4.6 Measures Section
+<a id="4-6-measures-section"></a>
+
+```clojure
+(measures
+  (measure 1
+    :beat-start 0              ; Absolute beat position (REQUIRED in v0.2+)
+    :sec-start 0.0             ; Absolute seconds (REQUIRED if tempo automation exists)
+    :time 2/4
+    :key C :mode minor
+    :tempo 108
+    :tempo-text "Allegro con brio"
+    :rehearsal "A"
+    :barline-left none
+    :barline-right single
+    
+    ; Part content
+    (flute-1 ...)
+    (clarinet-bb ...)
+    (piano ...)
+  )
+  
+  (measure 2
+    :beat-start 2              ; Absolute beat position (2/4 time = 2 beats per measure)
+    ; Inherits time, key, tempo from measure 1
+    (flute-1 ...)
+    ...
+  )
+)
+```
+
+#### 4.6.1 Measure Attributes
+
+| Attribute | Required | Type | Description |
+|-----------|----------|------|-------------|
+| number | YES | positive int | Measure number (1-indexed) |
+| `:beat-start` | YES (v0.2+) | rational | Absolute beat position since part start |
+| `:sec-start` | YES (if tempo automation) | float | Absolute seconds since part start |
+| `:time` | NO | fraction | Time signature change |
+| `:key` | NO | pitch-class | Key signature change |
+| `:mode` | NO | keyword | Mode specification |
+| `:tempo` | NO | integer | Tempo change in BPM |
+| `:tempo-text` | NO | string | Tempo marking text |
+| `:rehearsal` | NO | string | Rehearsal mark |
+| `:barline-left` | NO | barline-type | Left barline style |
+| `:barline-right` | NO | barline-type | Right barline style |
+| `:pickup` | NO | duration | Pickup/anacrusis duration |
+
+#### 4.6.2 Barline Types
+
+```
+none single double final
+repeat-start repeat-end repeat-both
+dashed tick short
+```
+
+#### 4.6.3 Attribute Inheritance
+
+Measure attributes inherit from previous measures unless overridden:
+
+- `:time` — persists until changed
+- `:key`, `:mode` — persist until changed
+- `:tempo`, `:tempo-text` — persist until changed
+- `:rehearsal` — does NOT inherit (single-measure)
+- `:barline-*` — do NOT inherit (per-measure)
+
+### 4.7 Cross-Boundary Spans and Envelope Safety
+<a id="4-7-cross-boundary-spans"></a>
+
+When extracting a Working Set Envelope, spans (slur, pedal, crescendo, ottava, bracket, trill extension, etc.) that cross envelope boundaries MUST be handled according to the following rules:
+
+#### 4.7.1 Boundary Marking
+
+1. **Span exits envelope**: Any span that starts inside the requested range and ends outside MUST be fully included in the envelope and marked with the attribute `:boundary-exit :to <target-location>`.
+
+```clojure
+(slur
+  :id #uuid "018c3f2a-..."
+  :from #uuid "018c3f1a-..."  ; Inside envelope (m45)
+  :to #uuid "018c3f2b-..."     ; Outside envelope (m52)
+  :boundary-exit :to [m52 violin-1 v1 b2])
+```
+
+2. **Span enters envelope**: Any span that starts outside the requested range and ends inside MUST be fully included and marked with `:boundary-entry :from <source-location>`.
+
+```clojure
+(hairpin
+  :id #uuid "018c3f2c-..."
+  :from #uuid "018c3f1b-..."  ; Outside envelope (m42)
+  :to #uuid "018c3f2d-..."     ; Inside envelope (m45)
+  :type crescendo
+  :boundary-entry :from [m42 violin-1 v1 b0])
+```
+
+3. **Span crosses envelope**: Any span that completely crosses the envelope (starts before and ends after) MUST be included and marked with both `:boundary-entry` and `:boundary-exit`.
+
+```clojure
+(pedal
+  :id #uuid "018c3f2e-..."
+  :from #uuid "018c3f1c-..."  ; Outside envelope (m40)
+  :to #uuid "018c3f2f-..."     ; Outside envelope (m55)
+  :type sustain
+  :boundary-entry :from [m40 piano lh b0]
+  :boundary-exit :to [m55 piano lh b0])
+```
+
+#### 4.7.2 Write Protection
+
+Upon replace, the orchestration layer MUST reject the replacement if any boundary-exit or boundary-entry span has been modified in a way that changes its musical meaning (start/end note, type, or style) unless the modifying agent explicitly held locks on both sides of the boundary.
+
+The only allowed modifications to a cross-boundary span inside a single envelope are:
+
+- Adding or removing intermediate control points that lie entirely within the envelope.
+- Changing visual style properties that do not affect semantics (e.g., `:placement`, `:color`, but not `:type`, `:from`, `:to`).
+
+#### 4.7.3 Effect
+
+Cross-boundary spans are never severed; they are always carried whole into every envelope they touch, and are write-protected at the ends. This makes the correct trade-off: agents can still work on long phrases without artificial chopping, while the system retains 100% lossless merge guarantees.
+
+**Validation Rule**: Boundary-anchored endpoints of spans crossing envelope edges are immutable unless the envelope range fully contains both endpoints. Violation of this rule is a fatal error on replace.
+
+### 4.8 Part Content Within Measures
+
+```clojure
+(measure 45
+  (violin-1
+    :clef treble          ; Optional clef change
+    :staff 1              ; Staff number if part has multiple
+    
+    ; Voice 1 (primary)
+    (v1
+      (: 0 G5.q :dyn f)
+      (: 1 A5.e)
+      (: 1.5 B5.e)
+      (: 2 C6.h))
+    
+    ; Voice 2 (secondary, if polyphonic)
+    (v2
+      (: 0 D5.h)
+      (: 2 E5.h)))
+  
+  ; Piano with multiple staves
+  (piano
+    (:rh                   ; Right hand (treble staff)
+      (: 0 [C4 E4 G4].q)
+      (: 1 [C4 E4 G4].q)
+      (: 2 [C4 E4 G4].h))
+    (:lh                   ; Left hand (bass staff)
+      (: 0 C3.q)
+      (: 1 G2.q)
+      (: 2 C3.h)))
+)
+```
+
+#### 4.8.1 Voice Naming
+
+For single-staff parts:
+- `v1` through `v4` for independent voices
+- Voice `v1` is the primary voice; higher numbers are secondary
+
+For multi-staff parts (piano, organ, harp):
+- `:rh` / `:lh` for right/left hand
+- Or `:staff1` / `:staff2` for numbered staves
+- Each staff may contain multiple voices: `(:rh (v1 ...) (v2 ...))`
+
+##### Layers (Same-Rhythm Sub-Structure)
+Within a voice, layers MAY be used to represent same-rhythm content that should be visually separated (e.g., shared stems/beams in keyboard voicings). When layers are present, the voice contains one or more `(layer <n> ...)` blocks instead of a flat event list.
+
+```clojure
+(v1
+  (layer 1
+    (: 0 C4.q) (: 1 D4.q))
+  (layer 2
+    (: 0 E4.q) (: 1 F4.q)))  ; Same rhythm, shared stem direction
+```
+
+### 4.9 Event Syntax
+<a id="4-9-event-syntax"></a>
+
+#### 4.9.1 The Beat-Position Event
+
+```clojure
+(: <beat> <pitch-expr> <properties>*)
+```
+
+| Component | Description |
+|-----------|-------------|
+| `:` | Event marker (always present) |
+| `<beat>` | Beat position within measure (0-indexed, decimal) |
+| `<pitch-expr>` | Pitch with duration, chord, or rest |
+| `<properties>` | Zero or more `:keyword value` pairs |
+
+**Required Properties (v0.2+):**
+
+- `:id` — Stable UUIDv7 identifier (REQUIRED in full scores)
+- `:at` — Absolute beat position as rational number (REQUIRED)
+
+**Example:**
+```clojure
+(: 0 C5.q 
+  :id #uuid "018c3f2a-1234-7890-abcd-ef1234567890"
+  :at 487+1/4
+  :dyn p)
+```
+
+**Legacy Structural Addressing:** Structural position references (`[m12 vln-1 v1 b2.5]`) are deprecated in v0.2. They remain allowed only inside envelopes where the referenced object has no `:id` yet (newly created objects before first commit). All references in committed scores MUST use `:id` references.
+
+#### 4.9.2 Beat Position
+
+Beat positions are zero-indexed decimals relative to the measure start:
+
+```
+4/4 time:
+  Beat 0    = Downbeat (beat 1 in musician terms)
+  Beat 1    = Beat 2
+  Beat 2    = Beat 3
+  Beat 3    = Beat 4
+  Beat 0.5  = "And" of beat 1
+  Beat 1.75 = Fourth sixteenth of beat 2
+
+3/4 time:
+  Beat 0    = Downbeat
+  Beat 1    = Beat 2
+  Beat 2    = Beat 3
+
+6/8 time (compound):
+  Beat 0    = Downbeat
+  Beat 1    = Dotted quarter 2
+  Beat 0.333... = First eighth subdivision
+```
+
+#### 4.9.3 Pitch Expression
+
+**Single Note:**
+```clojure
+C4.q        ; C4 quarter note
+Eb5.h       ; E-flat 5 half note
+F#3.e       ; F-sharp 3 eighth note
+Bbb4.w      ; B double-flat 4 whole note
+Cx4.s       ; C double-sharp 4 sixteenth note
+```
+
+**Chord (simultaneous pitches):**
+```clojure
+[C4 E4 G4].q      ; C major triad, quarter note
+[D3 F#3 A3 C4].h  ; D7 chord, half note
+```
+
+**Rest:**
+```clojure
+r.q         ; Quarter rest
+r.h         ; Half rest
+r.w         ; Whole rest
+```
+
+#### 4.9.4 Pitch Format
+
+```
+<pitch> ::= <step><accidental>?<octave>
+
+<step>       ::= A | B | C | D | E | F | G
+<accidental> ::= # | ## | x | b | bb
+<octave>     ::= 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
+
+; Middle C = C4
+; A440 = A4
+```
+
+#### 4.9.5 Duration Format
+
+| Symbol | Name | Relative Value |
+|--------|------|----------------|
+| `w` | Whole | 4 beats |
+| `h` | Half | 2 beats |
+| `q` | Quarter | 1 beat |
+| `e` | Eighth | 0.5 beats |
+| `s` | Sixteenth | 0.25 beats |
+| `t` | Thirty-second | 0.125 beats |
+| `x` | Sixty-fourth | 0.0625 beats |
+
+**Dotted durations:** Append `.` for dotted values
+
+| Symbol | Name | Relative Value |
+|--------|------|----------------|
+| `w.` | Dotted whole | 6 beats |
+| `h.` | Dotted half | 3 beats |
+| `q.` | Dotted quarter | 1.5 beats |
+| `e.` | Dotted eighth | 0.75 beats |
+
+**Double-dotted:** Append `..`
+
+| Symbol | Name | Relative Value |
+|--------|------|----------------|
+| `h..` | Double-dotted half | 3.5 beats |
+| `q..` | Double-dotted quarter | 1.75 beats |
+
+#### 4.9.6 Event Properties
+
+```clojure
+(: 0 G4.q 
+  :id #uuid "018c3f2a-1234-7890-abcd-ef1234567890"  ; Stable UUIDv7 identifier (REQUIRED)
+  :at 487+1/4                                        ; Absolute beat position (REQUIRED)
+  :dyn ff                    ; Dynamic
+  :art staccato              ; Articulation
+  :orn trill                 ; Ornament
+  :lyrics [{:verse 1 :text "Hal-" :syllabic :begin}]  ; Multi-verse lyrics
+  :lyric "Hal-"              ; DEPRECATED shorthand for verse 1 text
+  :lyric-ext true            ; DEPRECATED extender line (use :lyrics metadata)
+  :tech pizz                 ; Technique
+  :stem up                   ; Stem direction
+  :staff piano-rh            ; Staff attachment override (e.g., cross-staff)
+  :voice 2                   ; Voice assignment
+  :grace true                ; Grace note
+  :grace-slash true          ; Slashed grace note
+  :cue true                  ; Cue-sized
+  :hidden true               ; Don't render (spacing only)
+  :editorial true            ; Editorial addition
+  :ossia true                ; Ossia variant
+  :accidental :courtesy      ; :courtesy | :editorial | :force | :hidden
+  :notehead :diamond         ; :x | :diamond | :slash | :parenthesized | :small | pictogram
+  :fingering "2"             ; Fingering
+  :string "II"               ; String indication
+  :harmonic natural          ; Harmonic type
+  :color "#FF0000")          ; Color override
+```
+
+If both `:lyrics` and `:lyric` are present, `:lyrics` takes precedence.
+
+#### 4.9.7 Dynamic Values
+
+```
+pppp ppp pp p mp mf f ff fff ffff
+sfz sfp sffz fz rf rfz fp sf sff
+n niente
+```
+
+#### 4.9.8 Articulation Values
+
+```
+staccato staccatissimo tenuto accent marcato
+portato stress unstress
+fermata fermata-short fermata-long
+breath caesura
+```
+
+#### 4.9.9 Ornament Values
+
+```
+trill trill-flat trill-sharp
+mordent mordent-inverted
+turn turn-inverted turn-slash
+tremolo tremolo-1 tremolo-2 tremolo-3
+arpeggio arpeggio-up arpeggio-down
+glissando slide
+```
+
+#### 4.9.10 Technique Values (String)
+
+```
+arco pizz pizz-snap pizz-nail
+legno legno-batt legno-tratto
+pont tasto normale
+harm harm-natural harm-artificial
+trem trem-measured trem-unmeasured
+spicc detache martele
+sul-g sul-d sul-a sul-e
+```
+
+#### 4.9.11 Technique Values (Wind)
+
+```
+tongue double-tongue triple-tongue flutter
+overblow undertone multiphonic
+cuivre stopped open mute-straight mute-cup mute-harmon
+```
+
+### 4.10 Tuplet Syntax
+
+```clojure
+(tuplet 3:2 q                    ; Triplet: 3 in the space of 2 quarters
+  (: 0 C4.e)
+  (: 0.333 D4.e)
+  (: 0.667 E4.e))
+
+(tuplet 5:4 q                    ; Quintuplet: 5 in the space of 4 quarters  
+  (: 0 C4.s)
+  (: 0.2 D4.s)
+  (: 0.4 E4.s)
+  (: 0.6 F4.s)
+  (: 0.8 G4.s))
+
+; Nested tuplets and explicit ratio forms
+(tuplet :5:4 q                   ; Keyword ratio to avoid parsing ambiguity
+  (tuplet :7:6 e
+    (: 0 C4.s) ...))
+
+(tuplet :5:4.5 q ...)            ; Irrational decimal normal value
+(tuplet :5:9/2 q ...)            ; Irrational fraction normal value
+```
+
+**Tuplet Syntax:**
+```
+(tuplet <ratio> <base-duration>
+  <events>*)
+
+<ratio> ::= <actual>:<normal> | :<actual>:<normal>
+```
+
+The beat positions within a tuplet are expressed as fractions of the tuplet's total duration, normalized to 0-1.
+
+Unmeasured tremolo is deferred to future extensions (use a `:tremolo` event property for interim encoding).
+
+### 4.11 Grace Notes
+
+```clojure
+(grace 
+  :type acciaccatura           ; or appoggiatura
+  :slash true                  ; Slashed stem
+  :beat 2                      ; Attached to beat 2
+  (: 0 F#5.s)
+  (: 0.5 G5.s))
+
+; Main note that graces attach to
+(: 2 A5.q)
+```
+
+### 4.12 Spans Section
+<a id="4-11-spans-section"></a>
+
+Spans define relationships between events that cross event boundaries.
+
+```clojure
+(spans
+  ; Slur from m1 violin v1 beat 0 to m2 violin v1 beat 2
+  (slur
+    :id #uuid "018c3f2c-9abc-def0-1234-567890abcdef"
+    :from #uuid "018c3f2a-1234-7890-abcd-ef1234567890"  ; Event at m1 violin-1 v1 b0
+    :to #uuid "018c3f2b-5678-9012-cdef-0123456789ab"    ; Event at m2 violin-1 v1 b2
+    :placement above
+    :style solid)
+  
+  ; Tie (must connect identical pitches)
+  (tie
+    :id #uuid "018c3f2d-1234-5678-9abc-def012345678"
+    :from #uuid "018c3f2e-5678-9abc-def0-123456789abc"
+    :to #uuid "018c3f2f-9abc-def0-1234-567890abcdef"
+    :voice 1)
+  
+  ; Beam group
+  (beam
+    :id #uuid "018c3f30-1234-5678-9abc-def012345679"
+    :events [#uuid "018c3f31-5678-9abc-def0-123456789abd"
+             #uuid "018c3f32-9abc-def0-1234-567890abcde0"
+             #uuid "018c3f33-def0-1234-5678-9abcdef012345"
+             #uuid "018c3f34-1234-5678-9abc-def01234567a"]
+    :level 1
+    :feather accelerando)         ; OPTIONAL: accelerando | ritardando
+  
+  ; Cross-staff beaming
+  (cross-beam
+    :id #uuid "018c3f35-5678-9abc-def0-123456789abe"
+    :events [#uuid "018c3f36-9abc-def0-1234-567890abcde1"
+             #uuid "018c3f37-def0-1234-5678-9abcdef012346"
+             #uuid "018c3f38-1234-5678-9abc-def01234567b"]
+    :direction up)                ; OPTIONAL: stem/beam direction hint
+  
+  ; Hairpin (crescendo/diminuendo)
+  (hairpin
+    :id #uuid "018c3f39-5678-9abc-def0-123456789abf"
+    :from #uuid "018c3f3a-9abc-def0-1234-567890abcde2"
+    :to #uuid "018c3f3b-def0-1234-5678-9abcdef012347"
+    :type crescendo              ; or diminuendo
+    :placement below
+    :niente false)
+  
+  ; Ottava
+  (ottava
+    :from [m20 piano rh b0]
+    :to [m22 piano rh b4]
+    :type 8va                    ; 8va, 8vb, 15ma, 15mb
+    :placement above)
+  
+  ; Pedal
+  (pedal
+    :from [m1 piano lh b0]
+    :to [m2 piano lh b0]
+    :type sustain                ; sustain, sostenuto, una-corda
+    :style bracket)              ; bracket, line, text
+  
+  ; Glissando/portamento
+  (gliss
+    :from [m10 violin-1 v1 b2]
+    :to [m10 violin-1 v1 b3]
+    :style wavy                  ; wavy, straight
+    :text "gliss.")
+  
+  ; Volta brackets
+  (volta
+    :from [m16 b0]
+    :to [m16 b4]
+    :number 1
+    :text "1.")
+  
+  (volta
+    :from [m17 b0]
+    :to [m18 b4]
+    :number 2
+    :text "2., 3."))
+```
+
+#### 4.12.1 Reference Format
+
+**Primary Format (v0.2+):** UUID references
+
+All span endpoints and event references MUST use stable UUID identifiers:
+
+```clojure
+:from #uuid "018c3f2a-1234-7890-abcd-ef1234567890"
+:to #uuid "018c3f2b-5678-9012-cdef-0123456789ab"
+```
+
+**Legacy Structural Addressing (Deprecated in v0.2):**
+
+Structural position references are deprecated but remain allowed only inside envelopes where the referenced object has no `:id` yet (newly created objects before first commit):
+
+```
+[m<number> <part-id> <staff-or-voice> b<beat>]
+
+; Examples:
+[m1 violin-1 v1 b0]           ; Measure 1, violin-1, voice 1, beat 0
+[m5 piano rh b2.5]            ; Measure 5, piano right hand, beat 2.5
+[m10 soprano v1 b0]           ; Measure 10, soprano, voice 1, beat 0
+
+; Measure-only reference (for directions)
+[m8 b0]                       ; Measure 8, beat 0 (all parts)
+```
+
+All references in committed scores MUST use UUID references.
+
+#### 4.11.2 Span Types
+
+| Type | From/To | Description |
+|------|---------|-------------|
+| `slur` | YES | Phrase marking |
+| `tie` | YES | Connects identical pitches |
+| `beam` | events list | Connects note flags |
+| `hairpin` | YES | Dynamic wedge |
+| `ottava` | YES | Octave transposition |
+| `pedal` | YES | Piano pedal marking |
+| `trill-span` | YES | Extended trill line |
+| `gliss` | YES | Glissando line |
+| `cross-beam` | events list | Beam across staves |
+| `volta` | YES | Ending bracket |
+| `bracket` | YES | Analysis/grouping bracket |
+| `line` | YES | Generic line (8va, etc.) |
+
+### 4.13 Directions
+<a id="4-12-directions"></a>
+
+Directions are instructions that don't attach to specific notes.
+
+```clojure
+(measure 45
+  ; Directions at measure level
+  (dir :type tempo :beat 0 :text "Più mosso" :tempo 132)
+  (dir :type dynamic :beat 0 :text "ff" :scope all)
+  (dir :type rehearsal :beat 0 :text "B")
+  (dir :type text :beat 2 :text "poco rit." :placement above)
+  (dir :type segno :beat 0)
+  (dir :type coda :beat 0)
+  (dir :type fine :beat 0)
+  (dir :type dc :beat 0 :text "D.C. al Coda")
+  (dir :type ds :beat 0 :text "D.S. al Fine")
+  
+  ; Part-specific directions
+  (violin-1
+    (dir :type text :beat 0 :text "sul G" :placement above)
+    (dir :type dynamic :beat 2 :text "mp" :placement below)
+    ...)
+)
+```
+
+Additional direction types:
+
+```clojure
+(dir :type harp-pedal :beat 0
+  :pedals [Db C B | Eb F G Ab])     ; '|' indicates diagram break
+
+(dir :type instrument-change :beat 0 :text "to Triangle")
+```
+
+### 4.14 Layout Hints (Optional)
+
+Layout hints are NON-NORMATIVE suggestions for rendering engines. Renderers MAY ignore them entirely.
+
+```clojure
+(layout
+  :bar-numbers (every 5)            ; Show bar numbers every 5 measures
+  :multi-rest-style consolidated    ; Consolidated multi-measure rests
+  
+  ; Page/system breaks
+  (break :type system :after m8)
+  (break :type page :after m32)
+  
+  ; Spacing hints
+  (spacing 
+    :measures [m1 m4]
+    :stretch 1.2)               ; 120% of default width
+  
+  ; Staff visibility
+  (hide-empty-staves true)
+  (show-staves-from m1 [flute-1 oboe-1 clarinet-1])
+  
+  ; Condensing hints
+  (condense 
+    :parts [flute-1 flute-2]
+    :measures [m20 m40]
+    :label "Fl. 1, 2")
+  
+  ; Cue notes
+  (cue
+    :source [m45 violin-1]
+    :target [m45 flute-1]
+    :label "Vln. 1"))
+```
+
+### 4.15 Alternatives: Ossia, Variants, and Editorials
+
+New top-level section for conditional content outside the main score flow.
+
+#### Syntax
+```clojure
+(alternatives
+  (ossia
+    :measures [123 126]
+    :part violin-1
+    :label "easier version"
+    :content
+      (measure 123 (violin-1 (v1 ...)))  ; Duplicated or variant content
+      ...)
+  (variant  ; For editorial readings
+    :measures [50]
+    :label "ms. variant"
+    :content ...))
+```
+
+Visibility is renderer-controlled; this provides semantic structure.
+
+### 4.16 Ensemble Handling: Divisi and Condensing
+
+#### Semantic Divisi
+Marks where parts split/reunify:
+```clojure
+(divisi
+  :part violins-1
+  :from m45 :to m60
+  :into [a b]  ; Sub-parts
+  :labels ["Vln I div." ""])
+```
+
+#### Layout Hint for Condensing (Non-Normative)
+```clojure
+(layout
+  (condense violins-1 :sections 2 :labels ["div." ""]))
+```
+
+Both can be used together for full control.
+
+### 4.17 Score Structure: Movements
+
+New top-level wrapper for multi-movement works:
+```clojure
+(movements
+  (movement 1 :title "Allegro" :key C :mode major :time 4/4
+    (measures
+      (measure 1 ...) ...))
+  (movement 2 :title "Adagio" :key F :mode major :time 3/4
+    (measures
+      (measure 1 ...) ...)))
+```
+
+Single-movement scores omit the wrapper.
+
+## 5. Working Set Envelope
+<a id="5-working-set-envelope"></a>
+
+### 5.1 Overview
+<a id="5-1-overview"></a>
+
+A Working Set Envelope is a wrapper around a bounded MRS-S fragment that enables agents to operate on a small, self-contained portion of a score. The key design principle: **agents receive valid MRS-S and return valid MRS-S**. There is no second syntax, no abbreviations, no context-dependent parsing.
+
+The envelope provides:
+- **Scope declaration**: What measures and parts are included
+- **Source tracking**: Hash of the original document for conflict detection
+- **Task context**: Human-readable description for the agent
+- **Content**: A complete, valid MRS-S fragment
+
+### 5.2 Envelope Structure
+
+```clojure
+(working-set
+  :version 1.0
+  :source-hash "sha256:a3f2c1b9e4d7..."
+  :scope
+    (:measures 45 52)
+    (:parts [violin-1 violin-2 viola])
+    (:voices [v1])
+  :context "String counterpoint, development section. Add clarinet countermelody."
+  :constraints
+    ((range clarinet-1 E3 G6)
+     (avoid parallel-fifths violin-1))
+  
+  ;; The content is VALID MRS-S — not a different format
+  :content
+    (meta
+      :time 4/4
+      :key C :mode minor
+      :tempo 132)
+    
+    (parts
+      (part violin-1 :name "Violin 1" :abbr "Vln. 1" :staves [treble])
+      (part violin-2 :name "Violin 2" :abbr "Vln. 2" :staves [treble])
+      (part viola :name "Viola" :abbr "Vla." :staves [alto]))
+    
+    (measures
+      (measure 45
+        :time 4/4
+        :key C :mode minor
+        
+        (violin-1
+          (v1
+            (: 0 G5.q :dyn f)
+            (: 1 Ab5.q)
+            (: 2 G5.e)
+            (: 2.5 F5.e)
+            (: 3 Eb5.q)))
+        
+        (violin-2
+          (v1
+            (: 0 Eb5.q :dyn f)
+            (: 1 F5.q)
+            (: 2 Eb5.e)
+            (: 2.5 D5.e)
+            (: 3 C5.q)))
+        
+        (viola
+          (v1
+            (: 0 C4.q :dyn f)
+            (: 1 D4.q)
+            (: 2 C4.e)
+            (: 2.5 Bb3.e)
+            (: 3 Ab3.q))))
+      
+      (measure 46
+        (violin-1 (v1 (: 0 D5.h) (: 2 Eb5.q) (: 3 F5.q)))
+        (violin-2 (v1 (: 0 Bb4.h) (: 2 C5.q) (: 3 D5.q)))
+        (viola (v1 (: 0 G3.h) (: 2 Ab3.q) (: 3 Bb3.q)))))
+    
+    (spans
+      (slur :from [m45 violin-1 v1 b0] :to [m46 violin-1 v1 b2])
+      (hairpin :from [m45 violin-1 v1 b2] :to [m46 violin-1 v1 b0] :type diminuendo)))
+```
+
+### 5.3 Envelope Fields
+
+#### 5.3.1 Required Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `:version` | decimal | Envelope version (currently 1.0) |
+| `:scope` | scope-spec | Declares extraction boundaries |
+| `:content` | MRS-S | The actual score fragment |
+
+#### 5.3.2 Scope Specification
+
+```clojure
+:scope
+  (:measures <start> <end>)     ; Inclusive range
+  (:parts [<part-id>...])       ; List of included parts
+  (:voices [<voice-id>...])     ; Optional: specific voices (default: all)
+```
+
+#### 5.3.3 Optional Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `:source-hash` | string | SHA-256 hash of source MRS-S for conflict detection |
+| `:context` | string | Human-readable task description for the agent |
+| `:constraints` | list | Validation rules the agent must satisfy |
+| `:created` | ISO 8601 | Extraction timestamp |
+| `:agent-id` | string | Identifier for the requesting agent |
+
+### 5.4 Agent Response Format
+
+Agents return a **replacement fragment**—valid MRS-S content that will replace the extracted scope in the source document.
+
+```clojure
+(working-set-response
+  :version 1.0
+  :source-hash "sha256:a3f2c1b9e4d7..."
+  :scope
+    (:measures 45 52)
+    (:parts [clarinet-1])       ; Only the parts modified
+  
+  :content
+    (measures
+      (measure 45
+        (clarinet-1
+          (v1
+            (: 0 Eb4.q :dyn mp)
+            (: 1 D4.q)
+            (: 2 Eb4.e)
+            (: 2.5 F4.e)
+            (: 3 G4.q))))
+      
+      (measure 46
+        (clarinet-1
+          (v1
+            (: 0 Ab4.q)
+            (: 1 G4.q)
+            (: 2 F4.e)
+            (: 2.5 Eb4.e)
+            (: 3 D4.q)))))
+    
+    (spans
+      (slur :from [m45 clarinet-1 v1 b0] :to [m46 clarinet-1 v1 b2])
+      (dyn :beat [m45 clarinet-1 v1 b0] :text mp))
+  
+  :rationale "Created contrary motion: clarinet ascends Eb-D-Eb-F-G when violin descends G-Ab-G-F-Eb. Chord tones (Eb=3rd of Cm, G=5th) on downbeats. Phrase slur matches violin structure.")
+```
+
+### 5.5 Design Rationale
+
+MRS uses a single syntax (MRS-S) for both storage and agent operations. This provides significant advantages:
+
+| Benefit | Description |
+|---------|-------------|
+| **Unambiguous syntax** | No context-dependent parsing; every token has one meaning |
+| **Single parser** | One grammar, one test suite, one implementation |
+| **Trivial replacement** | Agent output substitutes directly; no expansion or conversion |
+| **Reliable generation** | LLMs produce more consistent output with uniform patterns |
+| **Simpler tooling** | Same syntax for debugging, validation, and diffing |
+
+**The insight**: A scoped MRS-S fragment is already small enough for context windows. The clarinet countermelody example above is ~1.5KB and ~400 tokens—well within any modern LLM context.
+
+### 5.6 Self-Containment Principle
+
+Every Working Set Envelope MUST be **self-contained**: the `:content` can be parsed and validated independently without access to the source document.
+
+This means:
+- Part definitions MUST be included (not referenced by ID alone)
+- Time/key/tempo state at extraction start MUST be declared
+- Spans MUST have both endpoints within the scope (or be marked as `:partial`)
+
+```clojure
+;; A span that starts before the extraction scope
+(spans
+  (slur 
+    :from [m42 violin-1 v1 b0]   ; Outside scope
+    :to [m46 violin-1 v1 b2]     ; Inside scope
+    :partial :end-only))         ; Marked as partial
+```
+
+### 5.7 Comparison to Other Extraction Models
+
+| Model | Scope Unit | Round-Trip | Agent I/O |
+|-------|-----------|------------|-----------|
+| Git patch | Line numbers | Fragile | Text diff |
+| JSON Patch | JSON pointer | Exact | Operations list |
+| MRS Working Set | Measure/part range | Lossless | Valid MRS-S in, valid MRS-S out |
+
+The Working Set model is closest to "extract subtree, edit subtree, replace subtree" patterns used in AST-based code editors.
+## 6. Data Model
+<a id="6-data-model"></a>
+
+### 6.1 Overview
+
+MRS-S and Working Set Envelopes serialize the same underlying data model. This section defines that model formally.
+
+### 6.2 Core Entities
+<a id="6-2-core-entities"></a>
+
+```
+Score
+├── Metadata: Map<String, Value>
+├── Parts: OrderedMap<PartId, Part>
+├── Measures: OrderedMap<MeasureNum, Measure>
+├── Spans: Set<Span>
+└── Layout: LayoutHints (optional)
+
+Part
+├── id: PartId (e.g., "violin-1")
+├── name: String
+├── abbreviation: String
+├── staves: List<Clef>
+├── section: Section?
+├── transposition: Interval?
+├── range: (Pitch, Pitch)?
+└── attributes: Map<String, Value>
+
+Measure
+├── number: PositiveInt
+├── beat-start: Rational (absolute beat position since part start)
+├── sec-start: Float? (absolute seconds since part start, REQUIRED if tempo automation exists)
+├── time: TimeSignature?
+├── key: KeySignature?
+├── tempo: Tempo?
+├── rehearsal: String?
+├── barlines: (BarlineType, BarlineType)
+├── directions: List<Direction>
+└── content: Map<PartId, PartContent>
+
+PartContent
+├── clef: Clef?
+├── staff: StaffNum?
+└── voices: Map<VoiceId, Voice>
+
+Voice
+└── events: List<Event>
+
+Event
+├── beat: Decimal (0-indexed position in measure, structural)
+├── at: Rational (absolute beat position since part start, REQUIRED)
+├── id: UUIDv7 (stable identifier, REQUIRED in committed scores)
+├── pitches: List<Pitch> (empty for rest)
+├── duration: Duration
+└── properties: Map<String, Value>
+
+Pitch
+├── step: A | B | C | D | E | F | G
+├── alter: Int (-2 to +2 for double-flat to double-sharp)
+└── octave: Int (0-9)
+
+Duration
+├── base: whole | half | quarter | eighth | sixteenth | ...
+├── dots: Int (0-2)
+└── tuplet: TupletRatio?
+
+Span
+├── id: UUIDv7 (stable identifier, REQUIRED in committed scores)
+├── type: slur | tie | beam | hairpin | ...
+├── from: UUIDv7 (reference to start event, REQUIRED in committed scores)
+├── to: UUIDv7 (reference to end event, REQUIRED in committed scores)
+├── events: List<UUIDv7>? (for beam groups)
+├── boundary-entry: (MeasureRef, Beat)? (if span enters envelope)
+├── boundary-exit: (MeasureRef, Beat)? (if span exits envelope)
+├── placement: above | below?
+└── properties: Map<String, Value>
+
+EventRef (Legacy, deprecated in v0.2)
+├── measure: MeasureNum
+├── part: PartId
+├── voice: VoiceId
+└── beat: Decimal
+
+Note: Structural EventRef format remains allowed only inside envelopes where referenced objects have no `:id` yet (newly created objects before first commit).
+
+Direction
+├── type: tempo | dynamic | rehearsal | text | ...
+├── beat: Decimal
+├── scope: PartId? | "all"
+├── text: String?
+└── properties: Map<String, Value>
+```
+
+### 6.3 Invariants
+<a id="6-3-invariants"></a>
+
+The following invariants MUST hold for all valid MRS documents:
+
+1. **Unique part IDs**: No two parts may share an ID
+2. **Sequential measures**: Measure numbers must be positive and may have gaps (for multi-movement works)
+3. **Beat bounds**: Event beat positions must be ≥ 0 and < measure duration
+4. **Duration sum**: Sum of durations in a voice should not exceed measure duration (warnings for overflow)
+5. **Tie pitch match**: Tied notes must have identical pitch
+6. **Span validity**: Span endpoints must reference existing events
+7. **Voice consistency**: Events in a voice should not overlap temporally
+8. **Stable identifiers** (v0.2+): Every event and span in a committed score MUST have a unique UUIDv7 `:id`. Once assigned, an `:id` is immutable.
+9. **Dual positioning** (v0.2+): Every event MUST have both structural position (`beat`) and absolute position (`:at`). Every measure MUST declare `:beat-start` and optionally `:sec-start`.
+10. **Absolute time consistency**: Absolute positions (`:at`) must be consistent with structural positions and measure boundaries. Validation rules involving timing MUST use absolute positions.
+
+### 6.4 Event Identity
+<a id="6-4-event-identity"></a>
+
+Events MUST be referenced by stable UUID identifiers in committed scores:
+
+**UUID reference** (REQUIRED in v0.2+):
+```clojure
+(: 2.5 G4.q 
+  :id #uuid "018c3f2a-1234-7890-abcd-ef1234567890"
+  :at 487+3/8)
+```
+
+**Legacy structural reference** (deprecated, allowed only in envelopes for new objects):
+```
+[m45 violin-1 v1 b2.5]
+```
+
+Structural references are computed; UUID identifiers are immutable and preserved through all transformations. On first replace of an envelope, the orchestration layer MUST assign stable `:id`s to any new objects that lack them and rewrite all internal structural references to UUID references before merging.
+
+### 6.5 Temporal Model
+<a id="6-5-temporal-model"></a>
+
+MRS uses a **dual positioning model** combining structural and absolute time:
+
+**Structural positioning** (measure-relative):
+- Beat 0 is the first beat of the measure
+- Beat positions are decimals (e.g., 1.5 = "and of 2" in 4/4)
+- Used for human navigation and measure-level scoping
+- Measure duration is derived from time signature
+
+**Absolute positioning** (REQUIRED in v0.2+):
+- `:at` — Rational number of quarter-notes since the start of the part
+- `:sec` — Floating-point seconds since start (REQUIRED if tempo automation exists)
+- Used for meter-agnostic reasoning, validation, and timing calculations
+
+Every event MUST carry both structural position (`beat` within measure) and absolute position (`:at`). Every measure MUST declare its absolute position (`:beat-start`, `:sec-start`).
+
+**Example:**
+```clojure
+(measure 12
+  :beat-start 487+1/4    ; Absolute position in quarter-notes
+  :sec-start 121.5      ; Absolute position in seconds
+  
+  (violin-1
+    (v1
+      (: 0 C5.q 
+        :at 487+1/4     ; Absolute beat position
+        :id #uuid "...")
+      (: 1 D5.q 
+        :at 487+1/2     ; Absolute beat position
+        :id #uuid "..."))))
+```
+
+All validation rules that involve timing (overlaps, span endpoints, etc.) MUST be checked against the absolute `:beat` spine; the measure/barline structure is treated as a presentation layer only.
+
+This dual model makes the format safe for metric modulations, polymeter, pickup bars, and agents that reason in continuous time rather than measure grids.
+
+---
+
+## 7. Extract-Replace Protocol
+<a id="7-extract-replace-protocol"></a>
+
+### 7.1 Overview
+
+The Extract-Replace Protocol defines how to create Working Set Envelopes from MRS-S documents and how to apply agent responses back to the source.
+
+```
+┌─────────────────┐         extract         ┌─────────────────────────┐
+│     MRS-S       │ ──────────────────────► │  Working Set Envelope   │
+│    (Source)     │                         │  (scoped MRS-S + meta)  │
+│                 │ ◄────────────────────── │                         │
+└─────────────────┘         replace         └─────────────────────────┘
+```
+
+The key simplification over traditional merge protocols: **replacement is trivial** because agents return valid MRS-S fragments that directly substitute for the extracted scope.
+
+### 7.2 Extraction (MRS-S → Working Set)
+<a id="7-2-extraction-mrs-s--working-set"></a>
+
+Extraction produces a Working Set Envelope from a source document.
+
+#### 7.2.1 Extraction Parameters
+
+```
+ExtractParams {
+  measures: Range<MeasureNum>      ; Required: measure range
+  parts: Set<PartId>               ; Required: parts to include
+  voices: Set<VoiceId>?            ; Optional: filter voices (default: all)
+  include_context_measures: Int?   ; Read-only context measures (default: 0)
+  task_context: String?            ; Human-readable task description
+  constraints: List<Constraint>?   ; Validation rules for agent output
+}
+```
+
+#### 7.2.2 Extraction Algorithm
+
+```
+function extract(source: MRS-S, params: ExtractParams) -> WorkingSetEnvelope:
+  
+  1. Validate params against source
+     - All requested measures exist
+     - All requested parts exist
+     - Measure range is valid (start ≤ end)
+  
+  2. Compute source hash
+     - SHA-256 of the source document
+     - Used for conflict detection on replace
+  
+  3. Resolve inherited state at extraction start
+     - Current time signature (may be from earlier measure)
+     - Current key signature
+     - Current tempo
+  
+  4. Build minimal parts section
+     - Include only requested parts
+     - Copy part definitions (name, abbr, staves, etc.)
+  
+  5. Extract measures
+     For each measure in range:
+       Copy measure attributes
+       For each requested part:
+         Copy all events in requested voices
+         Preserve full MRS-S event syntax (no abbreviation)
+  
+  6. Extract relevant spans
+     For each span in source:
+       If BOTH endpoints are in scope:
+         Include span unchanged
+       If only ONE endpoint is in scope:
+         Include span marked as :partial
+       If NEITHER endpoint is in scope:
+         Omit span
+  
+  7. Build envelope
+     - Set version, scope, source-hash
+     - Add context and constraints
+     - Attach content (valid MRS-S fragment)
+  
+  8. Return WorkingSetEnvelope
+```
+
+#### 7.2.3 Handling Partial Spans
+
+Spans that cross scope boundaries are marked as partial:
+
+```clojure
+(spans
+  ;; This slur starts before our extraction scope
+  (slur 
+    :from [m42 violin-1 v1 b0]   ; Outside scope (m45-52)
+    :to [m46 violin-1 v1 b2]     ; Inside scope
+    :partial :end-only)          ; Agent sees end but cannot modify start
+  
+  ;; This hairpin ends after our extraction scope
+  (hairpin
+    :from [m51 violin-1 v1 b0]   ; Inside scope
+    :to [m55 violin-1 v1 b2]     ; Outside scope
+    :type crescendo
+    :partial :start-only))       ; Agent sees start but cannot modify end
+```
+
+Agents MUST NOT modify `:partial` span endpoints outside their scope. They MAY delete the span entirely or modify only their side of the partial span.
+
+### 7.3 Replacement (Working Set → MRS-S)
+<a id="7-3-replacement-working-set--mrs-s"></a>
+
+Replacement applies agent output back to the source document. This is deliberately simpler than a traditional merge algorithm.
+
+#### 7.3.1 Replacement Parameters
+
+```
+ReplaceParams {
+  source: MRS-S                    ; Original source document
+  response: WorkingSetResponse     ; Agent's output
+  conflict_mode: ConflictMode      ; reject | force
+  validate: Boolean                ; Run full validation after replace
+}
+
+ConflictMode {
+  reject    ; Fail if source was modified since extraction
+  force     ; Apply anyway (agent output wins)
+}
+```
+
+#### 7.3.2 Replacement Algorithm
+
+```
+function replace(source: MRS-S, response: WorkingSetResponse, params: ReplaceParams) 
+  -> Result<MRS-S, ReplaceError>:
+
+  1. Verify source hash (if conflict_mode == reject)
+     If response.source_hash != hash(source):
+       Return Error(SourceModifiedSinceExtraction)
+  
+  2. Validate response scope against original extraction
+     - Measures must be within or equal to original scope
+     - Parts must be subset of original scope
+     - No events outside declared scope
+  
+  3. Parse response content
+     - Must be valid MRS-S
+     - Syntax errors are fatal
+  
+  4. For each part in response scope:
+     For each measure in response scope:
+       DELETE all existing events for that part/measure in source
+       INSERT all events from response for that part/measure
+  
+  5. Handle spans
+     For each span in response:
+       If span exists in source (same type, same endpoints):
+         UPDATE span properties
+       If span is new:
+         INSERT span
+     For each span in source that was in original scope:
+       If span NOT in response:
+         DELETE span (unless :partial and endpoint outside scope)
+  
+  6. Full validation (if requested)
+     - Syntax: re-parse entire document
+     - Structure: check invariants (unique IDs, beat bounds, etc.)
+     - Musical: check ties connect same pitches, etc.
+  
+  7. Return Result
+     - On success: modified MRS-S document
+     - On validation failure: list of errors
+```
+
+#### 7.3.3 Why Replacement Is Trivial
+
+Traditional merge algorithms must:
+- Parse two different syntaxes
+- Expand abbreviations and shorthands
+- Reconcile inherited state
+- Diff event-by-event
+- Handle partial matches
+
+The Working Set model eliminates all of this:
+
+| Traditional Merge | Working Set Replace |
+|------------------|---------------------|
+| Parse two different syntaxes | Parse MRS-S only |
+| Expand abbreviations | No abbreviations |
+| Compute change set | Delete scope, insert response |
+| Event-level diffing | Wholesale replacement |
+| Complex conflict resolution | Simple hash check |
+
+The entire merge logic reduces to: **delete the old scope, insert the new scope, validate**.
+
+### 7.4 Round-Trip Guarantee
+<a id="7-4-round-trip-guarantee"></a>
+
+For any valid MRS-S document S and extraction parameters P:
+
+```
+replace(S, identity(extract(S, P))) ≡ S
+```
+
+Where `identity` is the trivial agent that returns its input unchanged.
+
+This guarantee holds when:
+- The agent returns the extracted content without modification
+- The source document is not modified between extract and replace
+- `conflict_mode` is set to `force` (or hashes match)
+
+### 7.5 Concurrent Editing
+<a id="7-5-diff-and-patch"></a>
+
+Multiple agents can work on non-overlapping scopes simultaneously:
+
+```
+Agent A: scope (measures 1-10, parts [violin-1])
+Agent B: scope (measures 1-10, parts [cello])
+Agent C: scope (measures 50-60, parts [violin-1])
+```
+
+Agents A and B work on the same measures but different parts—no conflict.
+Agent C works on the same part as A but different measures—no conflict.
+
+**Conflicting scopes** (same measures AND same parts) MUST be serialized by the orchestrator:
+
+```
+; These conflict — orchestrator must serialize
+Agent X: scope (measures 45-52, parts [violin-1])
+Agent Y: scope (measures 48-55, parts [violin-1])
+```
+
+Resolution strategies:
+1. **Sequential**: Run X, replace, extract again, run Y
+2. **Locking**: Grant exclusive access to a scope for duration of task
+3. **Partition**: Split overlapping region so each agent has disjoint scope
+
+### 7.6 Version Control Integration
+
+MRS-S documents work naturally with standard version control systems:
+
+```bash
+# Standard git workflow
+git diff movement-1.mrs
+git commit -m "Add clarinet countermelody mm. 45-52"
+git merge feature/clarinet-part
+```
+
+Because agents return valid MRS-S, diffs are meaningful:
+
+```diff
+@@ -1247,6 +1247,18 @@
+       (violin-1
+         (v1
+           (: 0 G5.q :dyn f)
++    
++    (clarinet-1
++      (v1
++        (: 0 Eb4.q :dyn mp)
++        (: 1 D4.q)
+```
+
+No special MRS-aware merge tools are required.
+## 8. Agentic Operations
+<a id="8-agentic-operations"></a>
+
+### 8.1 Overview
+
+MRS is designed to support AI-assisted composition through well-defined agentic operations. The core principle: **agents receive valid MRS-S fragments and return valid MRS-S fragments**. There is no separate syntax for agent I/O.
+
+### 8.2 Task Definition
+<a id="8-2-task-definition"></a>
+
+```
+Task {
+  id: TaskId
+  type: TaskType
+  instruction: String              ; Natural language instruction
+  working_set: WorkingSetEnvelope  ; Scoped MRS-S fragment
+  context: Map<String, Value>      ; Additional context
+}
+
+TaskType {
+  compose      ; Create new content
+  arrange      ; Adapt existing content
+  harmonize    ; Add harmony to melody
+  orchestrate  ; Assign parts to instruments
+  analyze      ; Extract information (returns analysis, not MRS-S)
+  correct      ; Fix errors
+  transform    ; Apply transformation
+}
+```
+
+### 8.3 Task Message Protocol
+<a id="8-3-task-message-protocol"></a>
+
+#### 8.3.1 Task Request
+
+The orchestrator sends a Working Set Envelope containing valid MRS-S:
+
+```clojure
+(task
+  :id "task-001"
+  :type compose
+  :instruction "Write a countermelody for clarinet that moves in contrary 
+                motion to the violin, emphasizing chord tones on downbeats"
+  
+  :working-set
+    (working-set
+      :version 1.0
+      :source-hash "sha256:a3f2c1b9e4d7..."
+      :scope
+        (:measures 45 52)
+        (:parts [violin-1 clarinet-1])
+      :context "Development section, string counterpoint"
+      
+      :constraints
+        ((range clarinet-1 E3 G6)
+         (avoid parallel-fifths violin-1)
+         (prefer chord-tones downbeats)
+         (max-interval M6))
+      
+      :content
+        (meta :time 4/4 :key C :mode minor :tempo 132)
+        
+        (parts
+          (part violin-1 :name "Violin 1" :abbr "Vln. 1" :staves [treble])
+          (part clarinet-1 :name "Clarinet" :abbr "Cl." :staves [treble]))
+        
+        (measures
+          (measure 45
+            :time 4/4 :key C :mode minor
+            (violin-1
+              (v1
+                (: 0 G5.q :dyn f)
+                (: 1 Ab5.q)
+                (: 2 G5.e)
+                (: 2.5 F5.e)
+                (: 3 Eb5.q)))
+            (clarinet-1
+              (v1)))   ; Empty — TARGET for agent
+          
+          (measure 46
+            (violin-1 (v1 (: 0 D5.h) (: 2 Eb5.q) (: 3 F5.q)))
+            (clarinet-1 (v1)))))
+        
+        (spans
+          (slur :from [m45 violin-1 v1 b0] :to [m46 violin-1 v1 b2])))
+  
+  :context
+    {:style "classical"
+     :character "lyrical"
+     :priority "contrary-motion"})
+```
+
+#### 8.3.2 Task Response
+
+The agent returns a **valid MRS-S fragment** that will replace the extracted scope:
+
+```clojure
+(working-set-response
+  :task-id "task-001"
+  :status success
+  :source-hash "sha256:a3f2c1b9e4d7..."
+  
+  :scope
+    (:measures 45 52)
+    (:parts [clarinet-1])   ; Only the part(s) the agent modified
+  
+  :content
+    (measures
+      (measure 45
+        (clarinet-1
+          (v1
+            (: 0 Eb4.q :dyn mp)
+            (: 1 D4.q)
+            (: 2 Eb4.e)
+            (: 2.5 F4.e)
+            (: 3 G4.q))))
+      
+      (measure 46
+        (clarinet-1
+          (v1
+            (: 0 Ab4.q)
+            (: 1 G4.q)
+            (: 2 F4.e)
+            (: 2.5 Eb4.e)
+            (: 3 D4.q)))))
+    
+    (spans
+      (slur :from [m45 clarinet-1 v1 b0] :to [m46 clarinet-1 v1 b2]))
+  
+  :validation
+    (:constraints-satisfied true
+     :warnings [])
+  
+  :rationale "Created contrary motion: clarinet ascends Eb-D-Eb-F-G when 
+              violin descends G-Ab-G-F-Eb. Chord tones (Eb=3rd of Cm, G=5th) 
+              on downbeats. Phrase slur matches violin 2-bar structure.")
+```
+
+### 8.4 Constraint Language
+<a id="8-4-constraint-language"></a>
+
+Constraints specify rules that generated content must satisfy.
+
+#### 8.4.1 Range Constraint
+
+```
+(range <part> <low-pitch> <high-pitch>)
+```
+
+Generated notes must fall within the specified range.
+
+#### 8.4.2 Avoidance Constraint
+
+```
+(avoid <violation-type> <reference-part>?)
+
+; Violation types:
+parallel-fifths
+parallel-octaves  
+parallel-unisons
+voice-crossing <part>
+direct-fifths
+direct-octaves
+unresolved-dissonance
+```
+
+#### 8.4.3 Preference Constraint
+
+```
+(prefer <feature> <location>)
+
+; Features:
+chord-tones        ; Prioritize chord tones
+consonance         ; Prefer consonant intervals
+stepwise           ; Prefer stepwise motion
+contrary-motion    ; Prefer contrary motion to reference
+similar-rhythm     ; Match rhythm of reference
+distinct-rhythm    ; Contrast rhythm with reference
+
+; Locations:
+downbeats
+strong-beats
+all-beats
+phrase-start
+phrase-end
+```
+
+#### 8.4.4 Interval Constraint
+
+```
+(max-interval <interval>)     ; Maximum melodic interval
+(min-interval <interval>)     ; Minimum melodic interval
+```
+
+#### 8.4.5 Density Constraint
+
+```
+(note-density <min> <max>)    ; Notes per measure
+(rest-ratio <min> <max>)      ; Proportion of rests
+```
+
+### 8.5 Validation Pipeline
+<a id="8-5-validation-pipeline"></a>
+
+```
+function validate_result(task: Task, result: WorkingSetResponse) -> ValidationResult:
+
+  1. Parse result content as MRS-S
+     - Syntax must be valid MRS-S
+     - Scope must match or be subset of task scope
+  
+  2. Check constraints
+     For each constraint in task.working_set.constraints:
+       Evaluate constraint against result.content
+       Record pass/fail/warning
+  
+  3. Check music theory rules (if enabled)
+     - Voice leading
+     - Harmonic consistency
+     - Rhythmic validity
+  
+  4. Check style guidelines (if specified)
+     - Idiomatic writing for instrument
+     - Period-appropriate figures
+     - Register balance
+  
+  5. Return ValidationResult {
+       valid: Boolean
+       constraint_results: Map<Constraint, Status>
+       theory_warnings: List<Warning>
+       style_suggestions: List<Suggestion>
+     }
+```
+
+### 8.6 Multi-Agent Coordination
+<a id="8-6-multi-agent-coordination"></a>
+
+For complex tasks, multiple agents may work on different aspects of a score simultaneously.
+
+#### 8.6.1 Orchestrator Pattern
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                       ORCHESTRATOR                              │
+│                                                                 │
+│  Maintains: Full MRS-S score                                   │
+│  Manages: Task distribution, conflict resolution               │
+└─────────────────────────────────────────────────────────────────┘
+         │              │              │              │
+         ▼              ▼              ▼              ▼
+    ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
+    │ Harmony     │ │ Melody      │ │ Rhythm      │ │ Orch.       │
+    │ Agent       │ │ Agent       │ │ Agent       │ │ Agent       │
+    └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘
+```
+
+#### 8.6.2 Coordination Protocol
+
+```
+1. Orchestrator receives high-level task
+2. Orchestrator decomposes into sub-tasks with non-overlapping scopes
+3. For each sub-task:
+   a. Extract Working Set Envelope (scoped MRS-S fragment)
+   b. Dispatch to appropriate agent
+   c. Receive WorkingSetResponse (valid MRS-S fragment)
+   d. Validate result against constraints
+   e. Replace scope in full score (trivial substitution)
+4. Handle any scope conflicts by serializing overlapping tasks
+5. Return final result
+```
+
+#### 8.6.3 Conflict Resolution
+
+When multiple agents modify overlapping regions:
+
+```
+ConflictResolution {
+  sequential     ; Apply in order, later overwrites earlier
+  merge          ; Attempt automatic merge
+  ai_arbitrate   ; Use AI to resolve conflicts
+  human_review   ; Flag for human review
+}
+```
+
+### 8.7 Incremental Workflow
+
+Agents can work incrementally, building up content over multiple passes. Each pass extracts the current state, sends to an agent, and replaces:
+
+```
+; Pass 1: Melody agent creates melodic outline
+; Orchestrator extracts scope (measures 1-8, part: melody), agent returns:
+(measures
+  (measure 1 (melody (v1 (: 0 C5.h) (: 2 E5.h))))
+  (measure 2 (melody (v1 (: 0 D5.w))))
+  ...)
+
+; Pass 2: Harmony agent adds bass line  
+; Orchestrator extracts scope (measures 1-8, parts: melody + bass), agent returns:
+(measures
+  (measure 1
+    (melody (v1 (: 0 C5.h) (: 2 E5.h)))
+    (bass (v1 (: 0 C3.h) (: 2 G2.h))))
+  ...)
+
+; Pass 3: Rhythm agent adds accompaniment pattern
+; Each agent returns valid MRS-S; orchestrator does trivial replacement
+
+; Pass 4: Orchestration agent assigns to instruments
+; (may rename parts, distribute content across instruments)
+```
+
+The key: each agent receives valid MRS-S and returns valid MRS-S. No format conversion, no abbreviation expansion, no merge complexity.
+
+### 8.8 Working Set Strategies
+
+Different tasks require different scope configurations:
+
+#### 8.8.1 Vertical Slice (by part)
+
+Extract only relevant instruments:
+
+```clojure
+; Task: "Add clarinet countermelody"
+; Extract: melody part + target part + harmony reference
+
+(working-set
+  :scope
+    (:measures 45 52)
+    (:parts [violin-1 clarinet-1 harmony])
+  :context "Countermelody task - violin melody, clarinet target"
+  :content ...)
+```
+
+#### 8.8.2 Horizontal Slice (by time)
+
+Extract measure ranges:
+
+```clojure
+; Task: "Fix parallel fifths in mm. 78-80"
+; Extract: all SATB voices for small range
+
+(working-set
+  :scope
+    (:measures 78 80)
+    (:parts [soprano alto tenor bass])
+  :context "Voice leading correction"
+  :content ...)
+
+#### 8.8.3 Transform Operations
+
+For bulk operations like transposition, the orchestrator can apply transforms before/after agent work:
+
+```clojure
+; Task: "Transpose brass up M2 in mm. 100-108"
+; Orchestrator extracts, applies pre-transform, sends to agent for review
+
+(working-set
+  :scope
+    (:measures 100 108)
+    (:parts [horn-1 horn-2 trumpet-1 trumpet-2 trombone-1 tuba])
+  :context "Review transposition - check range issues"
+  :transform-applied (:transpose :up M2)
+  :content ...)  ; Already transposed MRS-S for agent to review/adjust
+
+; Agent returns adjusted version (fixing any range issues)
+(working-set-response
+  :content ...
+  :rationale "Transposition applied. Adjusted m103 trumpet-1 down octave 
+              to stay within range.")
+## 9. Validation Rules
+<a id="9-validation-rules"></a>
+
+### 9.1 Syntax Validation
+
+MRS-S has a formal grammar (Appendix A). Syntax validation verifies:
+
+- Document matches grammar
+- All required sections present
+- Version is supported
+- No malformed tokens
+
+### 9.2 Structural Validation
+
+| Rule | Severity | Description |
+|------|----------|-------------|
+| STRUCT-001 | ERROR | Duplicate part IDs |
+| STRUCT-002 | ERROR | Invalid measure numbers (non-positive) |
+| STRUCT-003 | ERROR | Invalid beat position (negative or > measure) |
+| STRUCT-004 | ERROR | Reference to non-existent part |
+| STRUCT-005 | ERROR | Reference to non-existent measure |
+| STRUCT-006 | WARNING | Gap in measure numbering |
+| STRUCT-007 | WARNING | Empty measure (no content) |
+
+### 9.3 Musical Validation
+
+| Rule | Severity | Description |
+|------|----------|-------------|
+| MUSIC-001 | ERROR | Tie connects different pitches |
+| MUSIC-002 | ERROR | Duration overflow (events exceed measure) |
+| MUSIC-003 | WARNING | Extreme pitch (outside practical range) |
+| MUSIC-004 | WARNING | Parallel fifths/octaves |
+| MUSIC-005 | WARNING | Voice crossing |
+| MUSIC-006 | WARNING | Large melodic leap (> P12) |
+| MUSIC-007 | INFO | Enharmonic spelling suggestion |
+
+### 9.4 Span Validation
+
+| Rule | Severity | Description |
+|------|----------|-------------|
+| SPAN-001 | ERROR | Span endpoint references non-existent event |
+| SPAN-002 | ERROR | Slur from/to are identical |
+| SPAN-003 | WARNING | Slur spans more than 8 measures |
+| SPAN-004 | WARNING | Overlapping slurs on same voice |
+| SPAN-005 | INFO | Beam grouping differs from default |
+| SPAN-006 | FATAL | Boundary-anchored endpoints of spans crossing envelope edges are immutable unless the envelope range fully contains both endpoints |
+
+### 9.5 Validation Levels
+
+```clojure
+ValidationLevel {
+  STRICT      ; All rules, errors and warnings stop processing
+  STANDARD    ; Errors stop, warnings are reported
+  LENIENT     ; Only errors stop processing
+  PERMISSIVE  ; Report all, stop on nothing
+}
+```
+
+---
+
+## 10. Extension Mechanisms
+<a id="10-extension-mechanisms"></a>
+
+### 10.1 Custom Properties
+
+Events, spans, and directions support arbitrary custom properties with the `x-` prefix:
+
+```clojure
+(: 0 C4.q 
+  :dyn f
+  :x-source "manuscript-page-47"
+  :x-confidence 0.85
+  :x-variant "A")
+```
+
+Custom properties:
+- MUST begin with `x-`
+- MUST have string, number, boolean, or array values
+- SHOULD be documented by the creating system
+- MAY be ignored by systems that don't recognize them
+
+### 10.2 Namespace Extensions
+
+For complex extensions, use namespaced properties:
+
+```clojure
+(: 0 C4.q
+  :analysis:roman-numeral "I"
+  :analysis:function "tonic"
+  :mei:xml-id "note-001")
+```
+
+Registered namespaces:
+
+| Namespace | Purpose |
+|-----------|---------|
+| `x-*` | Unregistered extensions |
+| `analysis:*` | Music theory analysis |
+| `mei:*` | MEI compatibility |
+| `midi:*` | MIDI-specific data |
+| `render:*` | Rendering hints |
+| `edit:*` | Editorial metadata |
+
+---
+
+## 11. MIME Types and File Extensions
+<a id="11-mime-types-and-file-extensions"></a>
+
+### 11.1 MIME Types
+
+| Format | MIME Type |
+|--------|-----------|
+| MRS-S | `application/vnd.mrs+sexpr` |
+| Working Set Envelope | `application/vnd.mrs+sexpr` (same as MRS-S) |
+
+**MIME Parameters:**
+
+- `stable-ids=true|false` — Indicates whether the document uses stable UUID identifiers for events and spans. Default: `true` for v0.2 and later. Documents without this parameter or with `stable-ids=false` are considered legacy format.
+
+Example:
+```
+Content-Type: application/vnd.mrs+sexpr; stable-ids=true
+```
+
+### 11.2 File Extensions
+
+| Format | Extension |
+|--------|-----------|
+| MRS-S | `.mrs` or `.mrs-s` |
+| Working Set Envelope | `.mrs-work` (optional; typically ephemeral) |
+
+Note: Working Set Envelopes are typically not persisted to files—they exist as in-memory structures passed between orchestrator and agents. When saved, they use the same syntax as MRS-S.
+
+### 11.3 Encoding
+
+MRS documents MUST be encoded in UTF-8. The BOM (Byte Order Mark) SHOULD NOT be used.
+
+---
+
+## 12. Security Considerations
+<a id="12-security-considerations"></a>
+
+### 12.1 Input Validation
+
+Parsers MUST validate input before processing:
+
+- Maximum document size limits
+- Maximum nesting depth limits
+- Maximum event count per measure
+- Valid Unicode in strings
+
+### 12.2 Denial of Service
+
+Implementations SHOULD protect against:
+
+- Deeply nested structures (stack overflow)
+- Very large measure numbers (memory exhaustion)
+- Excessive span counts (O(n²) algorithms)
+- Malformed UTF-8 sequences
+
+### 12.3 Information Disclosure
+
+Working Set Envelopes may expose:
+
+- Source document structure (via `:scope`)
+- Source document hash (for conflict detection)
+- Creator/modifier identity (via `:agent-id`)
+
+Implementations SHOULD allow redaction of sensitive metadata when sharing working sets externally.
+
+---
+
+## Appendix A: Complete Grammar (Summary)
+<a id="appendix-a-complete-grammar-summary"></a>
+
+### A.1 MRS-S Key Productions
+
+```peg
+document  <- '(' 'mrs-s' version meta parts measures spans? layout? ')'
+event     <- '(' ':' beat pitch-expr properties* ')'
+pitch     <- STEP ACCIDENTAL? OCTAVE '.' DURATION
+chord     <- '[' pitch+ ']' '.' DURATION
+span      <- '(' span-type ':from' ref ':to' ref attributes* ')'
+ref       <- '[' 'm' INT part-id voice-id? 'b' FLOAT ']'
+```
+
+### A.2 Working Set Envelope Key Productions
+
+```peg
+envelope  <- '(' 'working-set' version scope context? constraints? ':content' mrs-s-fragment ')'
+response  <- '(' 'working-set-response' task-id status scope ':content' mrs-s-fragment rationale? ')'
+scope     <- '(' ':scope' measures-spec parts-spec voices-spec? ')'
+```
+
+The `:content` of both envelope and response is valid MRS-S—no separate grammar required.
+
+Full grammars available in the MRS reference implementation repository.
+
+---
+
+## Appendix B: Quick Reference
+<a id="appendix-b-quick-reference"></a>
+
+### B.1 Duration Codes
+
+| Code | Duration | Beats (4/4) |
+|------|----------|-------------|
+| `w` | Whole | 4 |
+| `h` | Half | 2 |
+| `q` | Quarter | 1 |
+| `e` | Eighth | 0.5 |
+| `s` | Sixteenth | 0.25 |
+| `t` | 32nd | 0.125 |
+
+Add `.` for dotted, `..` for double-dotted.
+
+### B.2 Event Properties
+
+| Property | Values | Description |
+|----------|--------|-------------|
+| `:dyn` | pp, p, mp, mf, f, ff, etc. | Dynamic marking |
+| `:art` | staccato, tenuto, accent, etc. | Articulation |
+| `:orn` | trill, mordent, turn, etc. | Ornament |
+| `:tech` | pizz, arco, legno, etc. | Playing technique |
+| `:stem` | up, down | Stem direction |
+| `:grace` | true/false | Grace note |
+
+### B.3 Working Set Scope Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `:measures` | Yes | Start and end measure (inclusive) |
+| `:parts` | Yes | List of part IDs to include |
+| `:voices` | No | List of voice IDs (default: all) |
+| `:source-hash` | No | SHA-256 for conflict detection |
+| `:context` | No | Human-readable task description |
+| `:constraints` | No | Validation rules for agent output |
+
+---
+
+## Appendix C: Comparison with Other Formats
+<a id="appendix-c-comparison-summary"></a>
+
+| Aspect | MRS-S | MusicXML | ABC Notation | LilyPond |
+|--------|-------|----------|--------------|----------|
+| Syntax | S-expression | XML | Custom text | Custom text |
+| Formal grammar | Yes | Yes (XSD) | Partial | No |
+| Agent-friendly | Yes | No | Partial | No |
+| Full score support | Yes | Yes | Limited | Yes |
+| Semantic precision | High | High | Low | Medium |
+| Local editing | Yes | Difficult | Difficult | Difficult |
+
+MRS-S combines the semantic precision of MusicXML with the parsability of S-expressions and native support for scoped agent operations.
+
+---
+
+## Appendix D: Glossary
+<a id="appendix-d-glossary"></a>
+
+| Term | Definition |
+|------|------------|
+| **Agent** | An AI system that operates on MRS documents |
+| **Beat** | A metrical position within a measure (0-indexed) |
+| **Chord** | Multiple simultaneous pitches with shared duration |
+| **Event** | An atomic musical occurrence at a specific beat |
+| **Extraction** | Creating a Working Set Envelope from a source MRS-S |
+| **Measure** | A metrical unit bounded by barlines |
+| **MRS-S** | The canonical MRS format (S-expression based) |
+| **Orchestrator** | System that coordinates agent tasks and manages the full score |
+| **Part** | A single instrument or voice throughout a score |
+| **Replacement** | Substituting extracted scope with agent's response |
+| **Scope** | The measure/part/voice boundaries of a Working Set |
+| **Span** | A relation connecting multiple events (slur, tie, etc.) |
+| **Working Set Envelope** | A scoped MRS-S fragment with metadata for agent tasks |
+
+---
+
+## Appendix E: Revision History
+<a id="appendix-e-revision-history"></a>
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 0.2 | 2025-12-12 | Added stable UUID identifiers for events and spans. Implemented dual positioning model (structural + absolute time). Defined cross-boundary span semantics for envelope safety. Added MIME parameter `stable-ids`. |
+
+---
+
+*End of Specification*

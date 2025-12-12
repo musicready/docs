@@ -1,0 +1,47 @@
+---
+title: "Overview"
+description: "High-level guide to MRS (Music Representation Syntax): an AI/agent-oriented score representation with scoped extraction for full-scale workflows."
+---
+
+## What is MRS?
+
+**MRS (Music Representation Syntax)** is a format for encoding musical scores optimized for AI-assisted composition:
+
+- **MRS-S**: An S-expression-based format for complete, archival-quality scores
+- **Working Set Envelopes**: Scoped MRS-S fragments with metadata for bounded agent operations
+
+**The key insight**: Agents don't need a different format—they need a different *scope*. MRS uses a single syntax throughout; Working Set Envelopes simply extract bounded fragments with explicit boundaries.
+
+MRS is designed first and foremost to unlock **AI & agent-driven development workflows** on **full-scope musical scores**—where tools (and machine agents) can reliably read, modify, validate, and merge changes without needing the entire score in one context window. While the syntax is intentionally **human-auditable**, it is not primarily optimized for manual entry.
+
+## How It Works
+
+```
+Full Score (MRS-S)                    Working Set Envelope
+┌─────────────────────────┐           ┌─────────────────────────┐
+│ 90 parts × 1000 measures│  extract  │ Scoped MRS-S fragment   │
+│ ~6 MB                   │ ────────► │ + scope metadata        │
+└─────────────────────────┘           └─────────────────────────┘
+                                                  │
+                                                  │ agent edits
+                                                  ▼
+                                      ┌─────────────────────────┐
+                                      │ Agent returns:          │
+                                      │ Valid MRS-S fragment    │
+                                      └─────────────────────────┘
+                                                  │
+┌─────────────────────────┐           replace +   │
+│ Updated full score      │ ◄──────── validate ───┘
+└─────────────────────────┘
+```
+
+## How to use these docs
+
+- **Start here**: [`/introduction`](/introduction) and [`/design-principles`](/design-principles)
+- **Learn MRS-S syntax**: [`/mrs-s/overview`](/mrs-s/overview)
+- **Understand agent workflows**: [`/working-set-envelope`](/working-set-envelope) and [`/agentic-operations`](/agentic-operations)
+- **Read the full RFC**: [`/MRS-Specification-RFC`](/MRS-Specification-RFC)
+
+## Normative source
+
+This site is an organized presentation of the RFC document in [`/MRS-Specification-RFC`](/MRS-Specification-RFC). Where wording matters, treat the RFC as the normative reference.

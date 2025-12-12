@@ -1,0 +1,41 @@
+---
+title: "Appendix: Quick Reference"
+description: "Duration codes, event properties, and Working Set scope fields."
+---
+
+See: [`/MRS-Specification-RFC#appendix-b-quick-reference`](/MRS-Specification-RFC#appendix-b-quick-reference)
+
+## Duration Codes
+
+| Code | Duration | Beats (4/4) |
+|------|----------|-------------|
+| `w` | Whole | 4 |
+| `h` | Half | 2 |
+| `q` | Quarter | 1 |
+| `e` | Eighth | 0.5 |
+| `s` | Sixteenth | 0.25 |
+| `t` | 32nd | 0.125 |
+
+Add `.` for dotted, `..` for double-dotted.
+
+## Event Properties
+
+| Property | Values | Description |
+|----------|--------|-------------|
+| `:dyn` | pp, p, mp, mf, f, ff, etc. | Dynamic marking |
+| `:art` | staccato, tenuto, accent, etc. | Articulation |
+| `:orn` | trill, mordent, turn, etc. | Ornament |
+| `:tech` | pizz, arco, legno, etc. | Playing technique |
+| `:stem` | up, down | Stem direction |
+| `:grace` | true/false | Grace note |
+
+## Working Set Scope Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `:measures` | Yes | Start and end measure (inclusive) |
+| `:parts` | Yes | List of part IDs to include |
+| `:voices` | No | List of voice IDs (default: all) |
+| `:source-hash` | No | SHA-256 for conflict detection |
+| `:context` | No | Human-readable task description |
+| `:constraints` | No | Validation rules for agent output |

@@ -1,0 +1,67 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "MusicReady",
+  "colors": {
+    "primary": "#111827",
+    "light": "#2563EB",
+    "dark": "#0B1220"
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Overview",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "index",
+              "introduction",
+              "design-principles",
+              "architecture-overview",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "MRS-S Format",
+            "pages": [
+              "mrs-s/overview",
+              "mrs-s/metadata-and-parts",
+              "mrs-s/measures-and-events",
+              "mrs-s/spans-directions-and-structure"
+            ]
+          },
+          {
+            "group": "Agent Workflows",
+            "pages": [
+              "working-set-envelope",
+              "extract-replace-protocol",
+              "agentic-operations"
+            ]
+          },
+          {
+            "group": "Model & Validation",
+            "pages": [
+              "data-model",
+              "validation-rules",
+              "extensions",
+              "mime-and-extensions",
+              "security"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Spec RFC",
+        "groups": [
+          {
+            "group": "Spec RFC",
+            "pages": [
+              "MRS-Specification-RFC"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

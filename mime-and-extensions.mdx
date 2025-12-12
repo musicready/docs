@@ -1,0 +1,15 @@
+---
+title: "MIME Types & File Extensions"
+description: "Standard identifiers for MRS files."
+---
+
+| Format | MIME Type | Extensions |
+|--------|-----------|------------|
+| MRS-S | `application/vnd.mrs+sexpr` | `.mrs`, `.mrs-s` |
+| Working Set Envelope | `application/vnd.mrs+sexpr` | `.mrs-work` (optional) |
+
+Working Set Envelopes use the same MIME type as MRS-S because they contain valid MRS-S content. They are typically ephemeral (passed in-memory between orchestrator and agents) rather than persisted to files.
+
+MRS documents must be UTF-8 encoded (BOM should not be used).
+
+See: [`/MRS-Specification-RFC#11-mime-types-and-file-extensions`](/MRS-Specification-RFC#11-mime-types-and-file-extensions)

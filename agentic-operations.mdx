@@ -1,0 +1,68 @@
+---
+title: "Agentic Operations"
+description: "A protocol for machine agents to safely modify scores using Working Set Envelopes and explicit constraints."
+---
+
+MRS defines a protocol for agentic operations (AI-assisted composition/editing) centered on Working Set Envelopes and machine-checkable constraints.
+
+**Core Principle**: Agents receive valid MRS-S fragments and return valid MRS-S fragments. There is no separate syntax for agent I/O.
+
+See: [`/MRS-Specification-RFC#8-agentic-operations`](/MRS-Specification-RFC#8-agentic-operations)
+
+## Task Definition
+
+The RFC specifies a `Task` structure containing:
+- An instruction (natural language)
+- A Working Set Envelope (scoped MRS-S fragment)
+- Constraints (validation rules)
+- Additional context
+
+See: [`/MRS-Specification-RFC#8-2-task-definition`](/MRS-Specification-RFC#8-2-task-definition)
+
+## Task Message Protocol
+
+The orchestrator sends a Working Set Envelope containing valid MRS-S. The agent returns a `working-set-response` with:
+- Valid MRS-S content for the modified scope
+- Validation results
+- Rationale for changes
+
+See: [`/MRS-Specification-RFC#8-3-task-message-protocol`](/MRS-Specification-RFC#8-3-task-message-protocol)
+
+## Constraint Language
+
+Constraints specify rules generated content must satisfy:
+
+- **Range constraints**: Notes must fall within instrument range
+- **Avoidance constraints**: No parallel fifths, no voice crossing
+- **Preference constraints**: Chord tones on downbeats, stepwise motion
+
+See: [`/MRS-Specification-RFC#8-4-constraint-language`](/MRS-Specification-RFC#8-4-constraint-language)
+
+## Multi-Agent Coordination
+
+The orchestrator pattern enables multiple specialized agents:
+
+```
+         ORCHESTRATOR (maintains full MRS-S)
+         │         │         │         │
+         ▼         ▼         ▼         ▼
+    Harmony    Melody    Rhythm    Orch.
+    Agent      Agent     Agent     Agent
+```
+
+Non-overlapping scopes can be processed in parallel. Conflicting scopes are serialized.
+
+See: [`/MRS-Specification-RFC#8-6-multi-agent-coordination`](/MRS-Specification-RFC#8-6-multi-agent-coordination)
+
+## Incremental Workflow
+
+Agents work incrementally, each pass receiving the current state and returning modifications:
+
+1. **Melody agent** creates outline → orchestrator replaces
+2. **Harmony agent** adds bass line → orchestrator replaces
+3. **Rhythm agent** adds accompaniment → orchestrator replaces
+4. **Orchestration agent** assigns instruments → orchestrator replaces
+
+Each agent receives valid MRS-S and returns valid MRS-S. No format conversion required.
+
+See: [`/MRS-Specification-RFC#8-5-validation-pipeline`](/MRS-Specification-RFC#8-5-validation-pipeline)

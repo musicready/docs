@@ -1,0 +1,89 @@
+---
+title: "Extract-Replace Protocol"
+description: "The protocol for creating Working Set Envelopes and applying agent responses back to source documents."
+---
+
+The Extract-Replace Protocol defines how orchestrators create Working Set Envelopes from MRS-S documents and how to apply agent responses back.
+
+See: [`/MRS-Specification-RFC#7-extract-replace-protocol`](/MRS-Specification-RFC#7-extract-replace-protocol)
+
+## Overview
+
+```
+┌─────────────────┐         extract         ┌─────────────────────────┐
+│     MRS-S       │ ──────────────────────► │  Working Set Envelope   │
+│    (Source)     │                         │  (scoped MRS-S + meta)  │
+│                 │ ◄────────────────────── │                         │
+└─────────────────┘         replace         └─────────────────────────┘
+```
+
+The key simplification: **replacement is trivial** because agents return valid MRS-S fragments that directly substitute for the extracted scope.
+
+## Extraction
+
+Extraction produces a Working Set Envelope from a source document:
+
+1. Validate requested scope (measures exist, parts exist)
+2. Compute source hash for conflict detection
+3. Resolve inherited state (time/key/tempo at extraction start)
+4. Copy part definitions for requested parts
+5. Copy all events in scope
+6. Include spans (mark partial spans that cross boundaries)
+7. Build envelope with metadata
+
+See: [`/MRS-Specification-RFC#7-2-extraction-mrs-s--working-set`](/MRS-Specification-RFC#7-2-extraction-mrs-s--working-set)
+
+## Replacement
+
+Replacement applies agent output back to the source:
+
+1. Verify source hash (for conflict detection)
+2. Validate response scope matches extraction
+3. Parse response content as MRS-S
+4. **Delete** all events in scope from source
+5. **Insert** all events from response
+6. Handle span updates
+7. Full validation
+
+The entire merge logic reduces to: **delete the old scope, insert the new scope, validate**.
+
+See: [`/MRS-Specification-RFC#7-3-replacement-working-set--mrs-s`](/MRS-Specification-RFC#7-3-replacement-working-set--mrs-s)
+
+## Why Replacement Is Trivial
+
+Traditional merge algorithms must parse two syntaxes, expand abbreviations, and diff event-by-event. The Working Set model eliminates all of this:
+
+| Traditional Merge | Working Set Replace |
+|------------------|---------------------|
+| Parse two formats | Parse MRS-S only |
+| Expand abbreviations | No abbreviations |
+| Compute change set | Delete scope, insert response |
+| Event-level diffing | Wholesale replacement |
+| Complex conflict resolution | Simple hash check |
+
+## Concurrent Editing
+
+Non-overlapping scopes can be edited in parallel:
+
+```
+Agent A: scope (measures 1-10, parts [violin-1])
+Agent B: scope (measures 1-10, parts [cello])      ✓ No conflict
+Agent C: scope (measures 50-60, parts [violin-1])  ✓ No conflict
+```
+
+Conflicting scopes (same measures AND same parts) must be serialized by the orchestrator.
+
+See: [`/MRS-Specification-RFC#7-5-diff-and-patch`](/MRS-Specification-RFC#7-5-diff-and-patch)
+
+## Round-Trip Guarantee
+
+For any valid MRS-S document S and extraction parameters P:
+
+```
+replace(S, identity(extract(S, P))) ≡ S
+```
+
+Extracting and immediately replacing unchanged content produces an identical document.
+
+See: [`/MRS-Specification-RFC#7-4-round-trip-guarantee`](/MRS-Specification-RFC#7-4-round-trip-guarantee)
+

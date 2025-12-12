@@ -1,0 +1,17 @@
+---
+title: "Appendix: Comparison with Other Formats"
+description: "How MRS-S compares to MusicXML, ABC notation, and LilyPond."
+---
+
+See: [`/MRS-Specification-RFC#appendix-c-comparison-summary`](/MRS-Specification-RFC#appendix-c-comparison-summary)
+
+| Aspect | MRS-S | MusicXML | ABC Notation | LilyPond |
+|--------|-------|----------|--------------|----------|
+| Syntax | S-expression | XML | Custom text | Custom text |
+| Formal grammar | Yes | Yes (XSD) | Partial | No |
+| Agent-friendly | Yes | No | Partial | No |
+| Full score support | Yes | Yes | Limited | Yes |
+| Semantic precision | High | High | Low | Medium |
+| Local editing | Yes | Difficult | Difficult | Difficult |
+
+MRS-S combines the semantic precision of MusicXML with the parsability of S-expressions and native support for scoped agent operations via Working Set Envelopes.

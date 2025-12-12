@@ -1,0 +1,69 @@
+---
+title: "Introduction"
+description: "Motivation, goals, non-goals, and terminology for MRS."
+---
+
+## Abstract
+
+MRS (Music Representation Syntax) is a format for encoding musical scores optimized for AI-assisted composition workflows:
+
+- **MRS-S**: A single canonical format (S-expression based) for complete, archival-quality scores
+- **Working Set Envelopes**: Scoped MRS-S fragments with metadata for bounded agent operations
+
+Agents receive valid MRS-S and return valid MRS-S—no second syntax, no format conversion, no parsing ambiguity.
+
+See: [`/MRS-Specification-RFC#abstract`](/MRS-Specification-RFC#abstract)
+
+## Motivation
+
+The RFC motivates MRS as a bridge between:
+
+- **Interchange formats** that are complete but verbose and difficult to edit at scale
+- **Compact notations** that are easy to type but lack a fully deterministic, semantically complete model
+
+MRS explicitly targets the **scale problem**: editing should not require loading or reasoning about the entire score.
+
+See: [`/MRS-Specification-RFC#1-1-motivation`](/MRS-Specification-RFC#1-1-motivation)
+
+## Goals
+
+The RFC's goals include:
+
+1. **Semantic completeness**
+2. **Deterministic parsing**
+3. **Local reasoning**
+4. **Machine-friendly generation**
+5. **Human auditability**
+6. **Diff-friendly structure**
+7. **Renderer-agnostic semantics**
+
+See: [`/MRS-Specification-RFC#1-2-goals`](/MRS-Specification-RFC#1-2-goals)
+
+## Non-goals
+
+MRS explicitly does *not* attempt to:
+
+- Encode detailed visual layout (beyond optional hints)
+- Provide a programming language (no loops/macros/conditionals)
+- Define synthesis/playback behavior
+- Replace domain-specific formats (e.g. audio, MIDI, engraving source)
+
+See: [`/MRS-Specification-RFC#1-3-non-goals`](/MRS-Specification-RFC#1-3-non-goals)
+
+## Terminology
+
+Key terms used throughout the spec:
+
+| Term | Definition |
+|------|------------|
+| Score | A complete musical work in MRS format |
+| Part | A single instrument or voice throughout a score |
+| Staff | A visual grouping of five lines; parts may have multiple staves |
+| Voice | An independent melodic/rhythmic stream within a staff |
+| Measure | A metrical unit bounded by barlines |
+| Event | An atomic musical occurrence (note, rest, chord) |
+| Span | A relation connecting multiple events (slur, beam, hairpin) |
+| Working Set Envelope | A scoped MRS-S fragment with metadata for agent tasks |
+| Orchestrator | System that coordinates agent tasks and manages the full score |
+
+See: [`/MRS-Specification-RFC#1-4-terminology`](/MRS-Specification-RFC#1-4-terminology)

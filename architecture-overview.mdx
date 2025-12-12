@@ -1,0 +1,61 @@
+---
+title: "Architecture Overview"
+description: "How MRS-S and Working Set Envelopes enable agent workflows on full-scale scores."
+---
+
+This page follows RFC section 3. For the full text, see: [`/MRS-Specification-RFC#3-architecture-overview`](/MRS-Specification-RFC#3-architecture-overview).
+
+MRS is intentionally **AI/agent-oriented**: its primary goal is to make it practical for tools and machine agents to work with **full, professional scores** (including orchestral-scale works) through safe, local, deterministic edits—without ever requiring the whole score in one working context. The format remains **human-auditable** and version-control friendly, but is not primarily optimized for manual authoring.
+
+## The Single-Format Architecture
+
+MRS uses a single canonical syntax (**MRS-S**) for all operations. There is no separate "working format"—instead, Working Set Envelopes extract bounded MRS-S fragments with scope metadata.
+
+```
+┌───────────────────────────────────────────────────────────────┐
+│                      MRS-S                                    │
+│              The Single Canonical Format                      │
+│                                                               │
+│ • Complete, hierarchical, self-documenting                    │
+│ • Used for storage, interchange, AND agent I/O                │
+└───────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌───────────────────────────────────────────────────────────────┐
+│               WORKING SET ENVELOPE                            │
+│                                                               │
+│ • Wraps a scoped MRS-S fragment                               │
+│ • Declares extraction boundaries (measures, parts)            │
+│ • Agent receives MRS-S, returns MRS-S                         │
+│ • Orchestrator does trivial replacement + validation          │
+└───────────────────────────────────────────────────────────────┘
+```
+
+## The Scale Problem
+
+Full scores can be far larger than practical context windows for humans or machine agents:
+
+| Score Type | Approx. Tokens |
+|------------|----------------|
+| Lead sheet | ~2K |
+| Piano sonata | ~40K |
+| Full orchestra | ~1.5M |
+
+Editing typically targets a small region (a few parts, a measure range), not the whole score.
+
+See: [`/MRS-Specification-RFC#3-2-why-two-formats`](/MRS-Specification-RFC#3-2-why-two-formats)
+
+## Why One Format?
+
+MRS uses a single syntax for all operations. This provides:
+
+| Benefit | Description |
+|---------|-------------|
+| Unambiguous syntax | No context-dependent parsing |
+| Trivial merge logic | Scope replacement: delete old, insert new |
+| Single parser | One grammar, one implementation |
+| No conversion | Agent I/O uses the same syntax as storage |
+
+**The insight**: agents don't need a different format—they need a different *scope*. A small MRS-S fragment is already compact enough.
+
+See: [`/MRS-Specification-RFC#3-3-format-selection-guidelines`](/MRS-Specification-RFC#3-3-format-selection-guidelines)
