@@ -5,12 +5,29 @@ description: "A format for encoding musical scores optimized for AI-assisted com
 
 # MRS: Music Representation Syntax
 
-MRS is a format for encoding musical scores optimized for AI-assisted composition workflows. It provides:
+**MRS enables AI-driven composition of full orchestral works—symphonies, vocal arrangements, film scores—through iterative conversation with humans in the loop.**
+
+Think of it as the **"opencode of Dorico"**: professional-grade notation infrastructure designed from the ground up for agent-driven workflows. The goal is the hardest version of the problem: creating complex, multi-movement works from scratch with the granularity required for professional projects.
+
+## Why MRS?
+
+AI cannot currently compose or edit full orchestral scores reliably. Three fundamental challenges block progress:
+
+1. **Scale**: A full orchestral score (~1.5M tokens) exceeds any context window
+2. **Context**: Musical decisions require understanding surrounding material
+3. **Fragility**: Existing formats use positional references that break during editing
+
+MRS solves these through **UUID-first identity**, **context-aware extraction**, and a **single-writer orchestrator pattern** that makes iterative AI composition safe and reliable.
+
+**Is this approach feasible?** [Yes—read the detailed analysis →](/problem-and-approach)
+
+## Core Components
 
 - **MRS-S**: A single canonical format (S-expression based) for complete, archival-quality scores with stable UUID identifiers
 - **Working Set Envelopes**: Scoped MRS-S fragments with context rings for bounded agent operations
 - **Synopsis**: Compressed structural views providing global awareness
 - **Overlays**: Analytical metadata attached to score regions
+- **Orchestrator**: Single-writer coordinator with edit lanes for safe multi-agent workflows
 
 ## Key Features
 
@@ -23,18 +40,39 @@ Working Set Envelopes provide not just the edit region, but graduated context ri
 ### Single Syntax
 Agents receive valid MRS-S and return valid MRS-S. There is no second format, no abbreviations, no context-dependent parsing. Extraction and replacement are trivial operations.
 
-### Sequential Workflow Support
-Composition is fundamentally sequential at the structural level. MRS supports fluid workflows where form and structure emerge through the creative process, with UUIDs ensuring reference stability.
+### Edit Lanes
+Multiple agents can work in parallel on the same region with different concerns (notes, dynamics, lyrics). The orchestrator merges changes safely based on lane ownership.
+
+### Draft States
+First-class support for intentionally incomplete content. Placeholder regions, sketch rhythms, and harmonic plans without full voicings enable natural iterative workflows.
+
+### Human-in-the-Loop
+Checkpoints lock approved decisions (form, harmony, orchestration). Human review gates ensure quality at critical junctures.
 
 ## Quick Links
 
+**Getting Started**
+- [The Problem & Why MRS is Feasible](/problem-and-approach) — Detailed feasibility analysis
 - [Introduction](/introduction) — Motivation, goals, and terminology
 - [Design Principles](/design-principles) — Core design philosophy
-- [Architecture Overview](/architecture-overview) — How components work together
 - [Quickstart](/quickstart) — Get started with MRS-S
 
-## Specification
+**Architecture**
+- [Architecture Overview](/architecture-overview) — How components work together
+- [Orchestrator Contract](/orchestrator-contract) — Edit lanes, transactions, merge semantics
+- [Draft States](/draft-states) — Placeholder primitives for iterative composition
 
-The complete specification is available as an RFC:
-
+**Specification**
 - [MRS Specification RFC](/MRS-Specification-RFC) — Full normative specification
+
+## The Hardest Version of the Problem
+
+MRS is designed for symphonies-from-scratch: iterative creation of complex multi-movement works through AI conversation. This means supporting:
+
+- **Structural creation**: Insert measures, sections, movements—not just edit existing content
+- **Incomplete states**: Early-stage work has placeholders ("strings texture TBD")
+- **Cross-boundary spans**: Hairpins, slurs that cross edit boundaries
+- **Human checkpoints**: Lock form, lock harmony, lock orchestration progressively
+- **Conflict-free iteration**: Multiple agents contributing without destructive overwrites
+
+If MRS handles symphonies-from-scratch, it handles everything simpler too.

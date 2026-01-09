@@ -15,6 +15,7 @@ Score
 ├── Parts: OrderedMap<PartId, Part>
 ├── Measures: OrderedMap<UUID, Measure>
 ├── Spans: Set<Span>
+├── HarmonyPlan: HarmonyPlan (optional, embedded layer)
 ├── Overlays: Set<Overlay> (optional)
 └── Layout: LayoutHints (optional)
 
@@ -40,6 +41,11 @@ Span
 ├── from: UUIDv7 (event reference)
 ├── to: UUIDv7 (event reference)
 └── properties: Map<String, Value>
+
+HarmonyPlan
+├── id: UUIDv7
+├── harmony-events: List<HarmonyEvent>
+└── key-areas: List<KeyAreaSpan>
 ```
 
 See: [`/MRS-Specification-RFC#8-2-core-entities`](/MRS-Specification-RFC#8-2-core-entities)
@@ -92,3 +98,173 @@ MRS uses a **dual positioning model**:
 All validation involving timing MUST use absolute positions.
 
 See: [`/MRS-Specification-RFC#8-4-temporal-model`](/MRS-Specification-RFC#8-4-temporal-model)
+
+---
+
+## Voice Identity Policy
+
+**Voices are local per measure** (and per part). Voice `v1` in measure 45 has no inherent connection to `v1` in measure 46.
+
+### Rationale
+
+- "Voice 1/2" is a **notation device** for local polyphony, not a stable musical entity across an entire movement
+- Polyphony comes and goes; voices split and merge constantly in real music
+- Global/persistent voice IDs create hard identity problems during re-voicing operations (common in orchestration)
+- Keeping voices local dramatically simplifies merge logic
+
+### Voice Naming
+
+For single-staff parts:
+- `v1` through `v4` for independent voices
+- Voice `v1` is primary; higher numbers are secondary
+
+For multi-staff parts (piano, organ, harp):
+- `:rh` / `:lh` for right/left hand
+- Or `:staff1` / `:staff2` for numbered staves
+
+### Continuity Across Measures
+
+If you need to track a melodic line across measures:
+
+1. **Use spans** (which you already have) to link events across measures
+2. **Use an optional line ID annotation** for extended continuity
+
+```clojure
+(: 0 G5.q :id #uuid "..." :at 487+1/4 :line melody-a)
+```
+
+**Do NOT overload voice number for this purpose.** Voice is for notation layout; line/span is for musical continuity.
+
+### Orchestrator Normalization
+
+The orchestrator MAY renumber voices for canonical form (e.g., always `v1` before `v2` in output) as long as musical content is preserved. This is an implementation detail, not a semantic change.
+
+---
+
+## HarmonyPlan Layer
+
+The HarmonyPlan is an **embedded optional layer** within the canonical MRS-S score, not a separate document.
+
+### Rationale
+
+- **Prevents drift**: If HarmonyPlan were a separate document, alignment bugs would occur on every structural change (insert/delete measures)
+- **Supports iterative workflow**: Early stages often have "harmonic plan without notes"—keeping it in the same document enables unified checkpointing
+- **Still modular**: It's a separate edit lane (`harmonyPlan`) with its own permissions and locking
+
+### HarmonyPlan Structure
+
+```clojure
+(harmony-plan
+  :id #uuid "019a1b2c-..."
+  
+  ;; Chord events attached to measures
+  (harmony-event
+    :id #uuid "019a1b30-..."
+    :measure #uuid "018c3f40-0001-..."
+    :beat 0
+    :chord Cm
+    :function i)
+  
+  (harmony-event
+    :id #uuid "019a1b31-..."
+    :measure #uuid "018c3f40-0005-..."
+    :beat 0
+    :chord Fm
+    :function iv)
+  
+  (harmony-event
+    :id #uuid "019a1b32-..."
+    :measure #uuid "018c3f40-0009-..."
+    :beat 0
+    :chord G7
+    :function V7)
+  
+  ;; Key area spans
+  (key-area
+    :id #uuid "019a1b40-..."
+    :from-measure #uuid "018c3f40-0001-..."
+    :to-measure #uuid "018c3f40-0020-..."
+    :key C :mode minor)
+  
+  (key-area
+    :id #uuid "019a1b41-..."
+    :from-measure #uuid "018c3f40-0021-..."
+    :to-measure #uuid "018c3f40-0040-..."
+    :key Eb :mode major))
+```
+
+### HarmonyPlan Fields
+
+#### Harmony Events
+| Field | Required | Description |
+|-------|----------|-------------|
+| `:id` | Yes | Stable identifier |
+| `:measure` | Yes | UUID of the measure |
+| `:beat` | Yes | Beat position within measure |
+| `:chord` | Yes | Chord symbol (e.g., `Cm`, `G7`, `Bbmaj7`) |
+| `:function` | No | Roman numeral / functional analysis |
+| `:bass` | No | Bass note if different from root |
+
+#### Key Area Spans
+| Field | Required | Description |
+|-------|----------|-------------|
+| `:id` | Yes | Stable identifier |
+| `:from-measure` | Yes | Start measure UUID |
+| `:to-measure` | Yes | End measure UUID |
+| `:key` | Yes | Key center |
+| `:mode` | Yes | major, minor, dorian, etc. |
+
+### ChordPro Import
+
+ChordPro files are one source for HarmonyPlan:
+
+1. Import ChordPro → parse chord symbols and positions
+2. Generate HarmonyPlan events with new UUIDs
+3. Link to measures by stable IDs (requires measure mapping)
+
+HarmonyPlan can also be:
+- Created manually by a human
+- Inferred by an analysis agent from existing notes
+- Progressively refined during composition
+
+### HarmonyPlan and Notes Independence
+
+HarmonyPlan events can exist **without corresponding notes**:
+
+```clojure
+;; Valid: harmony plan exists, notes are TBD
+(harmony-plan
+  (harmony-event :measure #uuid "..." :chord Cm :function i))
+
+(measures
+  (measure :id #uuid "..."
+    (placeholder :parts [piano] :intent :accompaniment)))
+```
+
+This supports the natural workflow: plan harmony first, orchestrate later.
+
+---
+
+## Edit Lane Ownership
+
+Each field in the data model is owned by exactly one edit lane:
+
+| Entity | Field | Lane |
+|--------|-------|------|
+| Measure | `:id`, ordering | `structure` |
+| Measure | `:number` | orchestrator-only (derived) |
+| Measure | `:beat-start`, `:sec-start` | orchestrator-only (derived) |
+| Measure | `:time` | `temporal` |
+| Measure | `:tempo`, `:tempo-text` | `temporal` |
+| Measure | `:key`, `:mode` | `temporal` |
+| Event | pitch, duration, beat, voice | `notes` |
+| Event | `:at` | orchestrator-only (derived) |
+| Event | `:dyn` | `expression` |
+| Event | `:art` | `technique` |
+| Event | `:lyrics` | `lyricsText` |
+| Span (slur) | all | `expression` |
+| Span (hairpin) | all | `expression` |
+| Span (technique) | all | `technique` |
+| HarmonyPlan | all | `harmonyPlan` |
+
+See: [Orchestrator Contract - Lane Ownership](/orchestrator-contract#edit-lanes) for the complete ownership matrix.

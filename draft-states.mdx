@@ -1,0 +1,388 @@
+---
+title: "Draft States & Placeholders"
+description: "First-class support for intentionally incomplete content during from-scratch composition."
+---
+
+## Overview
+
+Creating a symphony from scratch is an iterative process. Early stages are intentionally incomplete: harmonic plans without full voicings, texture intentions without specific notes, sections marked "orchestrate later."
+
+MRS provides **first-class draft state primitives** so that:
+- Validation doesn't force AI/humans to hallucinate details
+- Incomplete regions are explicitly marked, not ambiguously empty
+- Workflows can checkpoint partial progress
+- Agents can communicate intent without committing to specifics
+
+---
+
+## The Problem with Strict-Only Validation
+
+If validation requires complete, correct notation at every step:
+
+1. **AI must fabricate details** to satisfy the validator, even when the human hasn't decided yet
+2. **Iteration becomes painful** — you can't save a "harmony draft" without filling in all parts
+3. **Intent is lost** — an empty measure might mean "rest" or "TBD"; you can't tell which
+
+Draft states solve this by making "intentionally incomplete" a valid, explicit state.
+
+---
+
+## Draft Primitives
+
+### 1. Placeholder Regions
+
+A placeholder marks a region as intentionally incomplete with optional intent tags:
+
+```clojure
+(placeholder
+  :id #uuid "019a2b3c-..."
+  :measures #uuid "018c3f40-0020-..." #uuid "018c3f40-0028-..."
+  :parts [violin-1 violin-2 viola cello]
+  :intent :texture
+  :description "String pad, sustained chords following harmonic rhythm"
+  :tags [strings sustained background]
+  :draft-level :sketch)
+```
+
+#### Placeholder Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `:id` | Yes | Stable identifier |
+| `:measures` | Yes | UUID range this placeholder covers |
+| `:parts` | Yes | Parts affected |
+| `:intent` | No | Semantic category (see below) |
+| `:description` | No | Human/agent readable explanation |
+| `:tags` | No | Searchable classification |
+| `:draft-level` | No | How incomplete: `:sketch`, `:draft`, `:review` |
+
+#### Intent Categories
+
+| Intent | Meaning |
+|--------|---------|
+| `:texture` | General texture/pad, details TBD |
+| `:countermelody` | Melodic material responding to main line |
+| `:doubling` | Will double existing material |
+| `:orchestrate` | Notes exist elsewhere, need orchestration |
+| `:fill` | Transitional/filler material |
+| `:solo` | Featured solo passage |
+| `:accompaniment` | Supporting harmonic/rhythmic material |
+| `:develop` | Develop existing thematic material |
+
+### 2. HarmonyPlan Without Notes
+
+The HarmonyPlan layer can exist independently of note content:
+
+```clojure
+(harmony-plan
+  (harmony-event
+    :measure #uuid "018c3f40-0001-..."
+    :beat 0
+    :chord Cm
+    :function i
+    :id #uuid "...")
+  
+  (harmony-event
+    :measure #uuid "018c3f40-0005-..."
+    :beat 0
+    :chord G7
+    :function V7
+    :id #uuid "..."))
+
+;; Measures may contain only placeholders, no actual notes yet
+(measures
+  (measure :id #uuid "018c3f40-0001-..." :number 1
+    (placeholder :parts [piano] :intent :accompaniment)))
+```
+
+This is valid under permissive validation: you have a harmonic plan, and the orchestration is explicitly marked as TBD.
+
+### 3. Sketch Rhythmic Placeholders
+
+For early-stage work, you may know rhythm but not pitches:
+
+```clojure
+(sketch-rhythm
+  :id #uuid "019a3c4d-..."
+  :measure #uuid "018c3f40-0010-..."
+  :part violin-1
+  :voice v1
+  :pattern [q q h]  ; quarter, quarter, half
+  :description "Main theme rhythm, pitches TBD")
+```
+
+Or rhythmic slashes (common in lead sheets and sketches):
+
+```clojure
+(: 0 slash.q :id #uuid "..." :at 0)
+(: 1 slash.q :id #uuid "..." :at 1)
+(: 2 slash.h :id #uuid "..." :at 2)
+```
+
+The `slash` pitch indicates "rhythm without specific pitch" — valid under permissive validation.
+
+### 4. Intent Annotations
+
+Attach intent to existing content without replacing it:
+
+```clojure
+(intent
+  :id #uuid "019a4d5e-..."
+  :target #uuid "018c3f40-0030-..."  ; measure or event UUID
+  :type :needs-review
+  :description "Voicing may be too thick for clarinet range"
+  :priority :medium)
+```
+
+Intent types:
+- `:needs-review` — Human should check this
+- `:needs-orchestration` — Orchestration pass needed
+- `:needs-dynamics` — Expression pass needed
+- `:needs-lyrics` — Lyrics pass needed
+- `:experimental` — Try this, may revert
+- `:reference` — Based on this source material
+
+---
+
+## Validation Levels
+
+MRS defines four validation levels. Draft states interact with these levels:
+
+### STRICT
+- All rules enforced
+- Errors AND warnings stop processing
+- **Draft primitives are ERRORS** — must be resolved before export
+
+### STANDARD
+- All rules enforced
+- Errors stop processing, warnings reported
+- **Draft primitives are WARNINGS** — allowed but flagged
+
+### LENIENT
+- Only critical rules enforced
+- Errors stop processing
+- **Draft primitives are allowed without warning**
+
+### PERMISSIVE
+- All rules evaluated but nothing stops processing
+- Everything reported, nothing blocked
+- **Draft primitives fully supported**
+
+### Recommended Workflow
+
+| Stage | Validation Level | Draft States |
+|-------|------------------|--------------|
+| Initial sketching | PERMISSIVE | Heavy use |
+| Harmonic planning | LENIENT | Placeholders for unorchestrated parts |
+| Orchestration passes | STANDARD | Resolving placeholders progressively |
+| Final review | STRICT | All placeholders must be resolved |
+| Export/publish | STRICT | No draft content allowed |
+
+---
+
+## Draft State Resolution
+
+### Automatic Resolution
+
+When an agent fills in a placeholder region, the placeholder is automatically removed:
+
+```clojure
+;; Before: placeholder exists
+(placeholder
+  :id #uuid "019a2b3c-..."
+  :measures #uuid "018c3f40-0020-..." #uuid "018c3f40-0024-..."
+  :parts [violin-1]
+  :intent :countermelody)
+
+;; After: agent provides content for those measures/parts
+;; → placeholder is removed, content replaces it
+```
+
+### Partial Resolution
+
+If an agent fills some but not all parts in a placeholder:
+
+```clojure
+;; Original placeholder covers violin-1, violin-2, viola, cello
+;; Agent fills violin-1, violin-2 only
+;; → Placeholder shrinks to cover viola, cello only
+```
+
+### Explicit Resolution
+
+An agent can explicitly mark a placeholder as resolved (even if empty):
+
+```clojure
+(resolve-placeholder
+  :id #uuid "019a2b3c-..."
+  :resolution :intentional-silence
+  :rationale "Dramatic pause before recapitulation")
+```
+
+---
+
+## Querying Draft State
+
+The orchestrator tracks draft state for workflow management:
+
+```clojure
+(query
+  :type draft-status
+  :response
+    (:total-placeholders 12
+     :by-intent
+       ((:texture 5)
+        (:countermelody 3)
+        (:orchestrate 4))
+     :by-part
+       ((violin-1 2)
+        (violin-2 2)
+        (viola 3)
+        (cello 3)
+        (flute-1 2))
+     :by-section
+       ((exposition 3)
+        (development 7)
+        (recapitulation 2))))
+```
+
+This enables UI displays like:
+- "12 regions need attention"
+- "Development section is 40% complete"
+- "Strings need orchestration pass"
+
+---
+
+## Agent Workflow with Drafts
+
+### Creating Placeholders
+
+Agents can create placeholders when they know *what* is needed but not *how*:
+
+```clojure
+(working-set-response
+  :content
+    (measures
+      (measure :id #uuid "..." :number 45
+        ;; Agent writes melody
+        (flute-1
+          (v1
+            (: 0 G5.q :id #uuid "..." :at 487+1/4)
+            (: 1 A5.q :id #uuid "..." :at 488+1/4)
+            ...))
+        
+        ;; Agent marks accompaniment as TBD
+        (placeholder
+          :parts [violin-1 violin-2 viola cello]
+          :intent :accompaniment
+          :description "Strings accompany flute melody, follow harmonic rhythm"))))
+```
+
+### Reading Placeholders
+
+Agents receive placeholders in their Working Set as context:
+
+```clojure
+(working-set
+  :context "Orchestrate the string accompaniment"
+  :content
+    (measures
+      (measure :id #uuid "..." :number 45
+        ;; Existing content (read-only context)
+        (flute-1 ...)
+        
+        ;; Placeholder to resolve (writable)
+        (placeholder
+          :id #uuid "019a2b3c-..."
+          :parts [violin-1 violin-2 viola cello]
+          :intent :accompaniment))))
+```
+
+The agent's task: replace the placeholder with actual content.
+
+---
+
+## Checkpointing with Drafts
+
+Checkpoints can coexist with draft states:
+
+```clojure
+(checkpoint
+  :id "harmony-approved"
+  :locks
+    ((harmonyPlan :scope :all))  ; Harmony is locked
+  
+  :allows-drafts true  ; Placeholders still allowed in other lanes
+  :required-resolution-for
+    ((structure)       ; No structure placeholders allowed
+     (harmonyPlan)))   ; No harmony placeholders allowed
+```
+
+This means:
+- Harmonic plan is approved and locked
+- Orchestration can still be in draft state
+- You can't add structural placeholders after form is locked
+
+---
+
+## Best Practices
+
+### 1. Use Intent Tags
+
+Don't just leave empty placeholders—describe what goes there:
+
+```clojure
+;; Bad: no information
+(placeholder :measures #uuid "..." :parts [strings])
+
+;; Good: clear intent
+(placeholder 
+  :measures #uuid "..." 
+  :parts [strings]
+  :intent :texture
+  :description "Sustained string pad, pp, following harmonic rhythm")
+```
+
+### 2. Progressive Resolution
+
+Work from skeleton to detail:
+
+1. **Form** — Structure and section boundaries (resolve structure placeholders)
+2. **Harmony** — Chord progression and key areas (resolve harmonyPlan placeholders)
+3. **Melody** — Main thematic material (resolve melodic placeholders)
+4. **Orchestration** — Full instrumentation (resolve texture/doubling placeholders)
+5. **Expression** — Dynamics and articulation (resolve expression placeholders)
+
+### 3. Checkpoint After Each Stage
+
+Lock completed work before proceeding:
+
+```clojure
+;; After form is approved
+(checkpoint :id "form-locked" :locks ((structure :scope :all)))
+
+;; After harmony is approved
+(checkpoint :id "harmony-locked" :locks ((harmonyPlan :scope :all)))
+
+;; After orchestration is approved
+(checkpoint :id "orch-locked" :locks ((notes :scope :all)))
+```
+
+This prevents later agents from undoing earlier decisions.
+
+---
+
+## Summary
+
+Draft states enable professional iterative composition workflows:
+
+| Feature | Purpose |
+|---------|---------|
+| Placeholders | Mark regions as intentionally incomplete |
+| Intent annotations | Communicate what's needed without specifying how |
+| Sketch rhythms | Capture rhythmic ideas before pitches |
+| HarmonyPlan without notes | Plan harmony before orchestration |
+| Validation levels | Control strictness by workflow stage |
+| Progressive resolution | Fill in detail iteratively |
+
+This is what makes "symphony from scratch" feasible: the system supports the actual creative process, not just finished scores.

@@ -1,13 +1,73 @@
 ---
 title: "Agent Operations"
-description: "Context-aware agent workflows using Working Set Envelopes, Synopsis, and Overlays."
+description: "Context-aware agent workflows using Working Set Envelopes, edit lanes, and the single-writer orchestrator pattern."
 ---
 
-MRS defines a protocol for agentic operations (AI-assisted composition/editing) centered on Working Set Envelopes with context rings and synopsis access.
+MRS defines a protocol for agentic operations (AI-assisted composition/editing) centered on Working Set Envelopes with context rings, edit lanes, and a single-writer orchestrator.
 
 **Core Principle**: Agents receive valid MRS-S fragments with appropriate context and return valid MRS-S fragments. There is no separate syntax for agent I/O.
 
 See: [`/MRS-Specification-RFC#10-agent-operations`](/MRS-Specification-RFC#10-agent-operations)
+
+## The Orchestrator Pattern
+
+The orchestrator is the central coordinator that makes AI-driven composition safe and reliable. It owns the canonical score state and mediates all agent operations.
+
+```
+         ORCHESTRATOR (owns canonical MRS-S state)
+                │
+    ┌───────────┼───────────┬───────────┐
+    ▼           ▼           ▼           ▼
+ Harmony    Melody      Orch.      Expression
+  Agent      Agent      Agent        Agent
+    │           │           │           │
+    └───────────┴───────────┴───────────┘
+                │
+         Working Set Envelopes
+         (scoped MRS-S + edit lanes)
+```
+
+**Key insight**: Multiple agents can work in parallel, but **only the orchestrator commits** changes to the canonical score. This gives you multi-agent power without multi-writer chaos.
+
+For full orchestrator semantics, see: [Orchestrator Contract](/orchestrator-contract)
+
+## Edit Lanes
+
+Edit lanes are capability boundaries that determine what an agent may modify. They enable safe parallel work: agents with disjoint lanes can edit the same measures without conflict.
+
+### v1 Lane Set
+
+| Lane | Owns |
+|------|------|
+| `structure` | Measure list, sections, repeats, movements |
+| `temporal` | Tempo map, time signatures |
+| `harmonyPlan` | Chord symbols, harmonic rhythm, key areas |
+| `notes` | Pitches, durations, rests, voice assignment |
+| `expression` | Dynamics, hairpins, slurs, expressive text |
+| `technique` | Articulations, playing techniques |
+| `lyricsText` | Lyrics, syllables, underlay |
+
+### Lane-Based Scope Grants
+
+Working Set Envelopes include explicit lane permissions:
+
+```clojure
+(working-set
+  :scope
+    (:measures #uuid "..." #uuid "...")
+    (:parts [clarinet-1])
+  
+  :lanes [notes expression]           ; What the agent may modify
+  :allowed-ops [upsert-event delete-event upsert-span]
+  
+  :locks
+    ((structure :scope :all)          ; Form is locked (read-only)
+     (harmonyPlan :scope :all))       ; Harmony is locked (read-only)
+  
+  :content ...)
+```
+
+If an agent returns changes outside its granted lanes, the orchestrator rejects them.
 
 ## Task Definition
 
@@ -16,7 +76,7 @@ Task {
   id: TaskId
   type: TaskType
   instruction: String              ; Natural language instruction
-  working_set: WorkingSetEnvelope  ; Scoped MRS-S with context
+  working_set: WorkingSetEnvelope  ; Scoped MRS-S with context + lanes
   synopsis: Synopsis?              ; Structural overview
   context: Map<String, Value>      ; Additional context
 }
@@ -53,15 +113,38 @@ Composition proceeds through sequential agent operations. Form and structure eme
 4. Orchestration (orchestration agent)
    → orchestrator replaces
    
-5. Refinement passes...
+5. Expression pass (dynamics agent)
+   → orchestrator merges (disjoint lane)
+   
+6. Refinement passes...
 ```
 
 Each agent:
 - Receives current state in Working Set Envelope
 - Has context rings for surrounding material
 - Has synopsis access for global awareness
+- Has explicit lane permissions
 - Returns valid MRS-S fragment
 - May request scope expansion via negotiation
+
+## Layered Merges
+
+When multiple agents edit the same region with **disjoint lanes**, the orchestrator can merge both:
+
+```
+Agent A: notes lane      →  (violin-1 (v1 (: 0 G5.q ...)))
+Agent B: expression lane →  (hairpin :from #uuid "..." :to #uuid "..." :type crescendo)
+
+Orchestrator: merges both into the same measures (no conflict)
+```
+
+### Merge Rules
+
+- **Disjoint lanes**: Auto-merge allowed
+- **Same lane, different objects**: Usually auto-merge
+- **Same lane, same object**: Conflict → reject or human review
+
+See: [Orchestrator Contract - Layered Merge Policy](/orchestrator-contract#layered-merge-policy)
 
 ## Context-Aware Operations
 
@@ -71,6 +154,7 @@ Agents operate with full context:
 (working-set
   :scope (:measures #uuid "..." #uuid "...") (:parts [clarinet-1])
   :display-hint (:measures 45 52)
+  :lanes [notes]
   
   :content (measures ...)           ; Full detail, writable
   
@@ -93,6 +177,13 @@ Constraints specify rules generated content must satisfy:
 - **Avoidance constraints**: No parallel fifths, no voice crossing
 - **Preference constraints**: Chord tones on downbeats, stepwise motion
 
+```clojure
+:constraints
+  ((range clarinet-1 E3 G6)
+   (avoid parallel-fifths violin-1)
+   (prefer chord-tones downbeats))
+```
+
 See: [`/MRS-Specification-RFC#10-4-constraint-language`](/MRS-Specification-RFC#10-agent-operations)
 
 ## Scope Negotiation
@@ -109,16 +200,62 @@ Agents can request scope adjustments:
 
 The orchestrator can grant, deny, or offer alternatives.
 
-## Orchestrator Pattern
+## Human Review Gates
 
-The orchestrator maintains the full score and coordinates agent operations:
+Certain operations trigger human review:
 
+| Operation | Reason |
+|-----------|--------|
+| Structure changes | Form is foundational |
+| Temporal changes | Affects all timing |
+| Span repairs | Cross-boundary safety |
+| Conflicts | Cannot auto-resolve |
+
+Human approval is recorded in the change-set:
+
+```clojure
+(human-review
+  :changeset-id #uuid "..."
+  :status :approved
+  :reviewer "composer"
+  :notes "Approved with minor adjustment to hairpin")
 ```
-         ORCHESTRATOR (maintains full MRS-S)
-         │         │         │         │
-         ▼         ▼         ▼         ▼
-    Harmony    Melody    Rhythm    Orch.
-    Agent      Agent     Agent     Agent
+
+## Checkpoints
+
+Lock approved decisions to prevent regression:
+
+```clojure
+(checkpoint
+  :id "harmony-approved"
+  :locks
+    ((structure :scope :all)
+     (harmonyPlan :scope :all)))
 ```
 
-Operations are sequential at the structural level, with context provided for each agent task.
+After this checkpoint, agents cannot modify form or harmony—only orchestration, expression, and other unlocked lanes.
+
+See: [Orchestrator Contract - Checkpoints and Locks](/orchestrator-contract#checkpoints-and-locks)
+
+## Working with Draft States
+
+Agents can create and resolve placeholders:
+
+```clojure
+;; Agent creates placeholder for future work
+(placeholder
+  :parts [violin-1 violin-2 viola cello]
+  :intent :accompaniment
+  :description "Strings accompany flute melody")
+
+;; Later agent resolves placeholder with actual content
+(working-set-response
+  :content
+    (measures
+      (measure :id #uuid "..."
+        (violin-1 (v1 (: 0 G4.h ...)))
+        (violin-2 (v1 (: 0 D4.h ...)))
+        ...)))
+```
+
+See: [Draft States](/draft-states)

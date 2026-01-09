@@ -16,19 +16,42 @@ Agents receive valid MRS-S and return valid MRS-S—no second syntax, no format 
 
 See: [`/MRS-Specification-RFC#abstract`](/MRS-Specification-RFC#abstract)
 
+## The Vision
+
+**MRS enables AI-driven composition of full orchestral works—symphonies, vocal arrangements, film scores—through iterative conversation with humans in the loop.**
+
+This is the "opencode of Dorico": professional-grade notation infrastructure designed from the ground up for agent-driven workflows. The goal is not simplified demos, but the hardest version of the problem: creating complex, multi-movement works from scratch with the granularity required for professional projects.
+
+For a detailed feasibility analysis, see: [The Problem & Why MRS is Feasible](/problem-and-approach)
+
 ## Motivation
 
-MRS addresses two fundamental challenges in working with musical scores:
+MRS addresses three fundamental challenges in AI-assisted music composition:
 
-**Scale**: A full orchestral score is too large for any context window. Editing measure 847 should not require loading measures 1-846.
+### The Scale Problem
 
-**Context**: Musical decisions require understanding surrounding material. An agent writing a countermelody needs to know phrase boundaries, harmonic rhythm, and thematic relationships—not just the target measures in isolation.
+A full orchestral score is too large for any context window. Editing measure 847 should not require loading measures 1-846.
 
-MRS solves this through:
+| Score Type | Approx. Tokens |
+|------------|----------------|
+| Lead sheet | ~2K |
+| Piano sonata | ~40K |
+| Full orchestra | ~1.5M |
+
+### The Context Problem
+
+Musical decisions require understanding surrounding material. An agent writing a countermelody needs to know phrase boundaries, harmonic rhythm, and thematic relationships—not just the target measures in isolation.
+
+### The Structural Fragility Problem
+
+Existing formats use positional references that break during editing. Insert a measure, and every reference to "measure 45" is now wrong. MRS solves this with UUID-first identity.
+
+MRS solves these through:
 - **Stable UUID identifiers** for measures and events (not position-dependent references)
 - **Context rings** providing surrounding material at graduated detail levels
 - **Synopsis** offering compressed structural views for global awareness
 - **A single canonical syntax** for all operations
+- **An orchestrator pattern** with edit lanes for safe multi-agent workflows
 
 See: [`/MRS-Specification-RFC#1-introduction`](/MRS-Specification-RFC#1-introduction)
 
@@ -42,6 +65,7 @@ See: [`/MRS-Specification-RFC#1-introduction`](/MRS-Specification-RFC#1-introduc
 6. **Human auditability**: People can review and debug outputs
 7. **Diff-friendly structure**: Line-based changes produce meaningful diffs
 8. **Renderer-agnostic semantics**: Describe *what*, not *how to draw*
+9. **From-scratch composition**: Support iterative creation, not just editing
 
 See: [`/MRS-Specification-RFC#1-2-goals`](/MRS-Specification-RFC#1-2-goals)
 
@@ -65,7 +89,7 @@ Key terms used throughout the spec:
 | Score | A complete musical work in MRS format |
 | Part | A single instrument or voice throughout a score |
 | Staff | A visual grouping of five lines; parts may have multiple staves |
-| Voice | An independent melodic/rhythmic stream within a staff |
+| Voice | An independent melodic/rhythmic stream within a staff (local per measure) |
 | Measure | A metrical unit bounded by barlines, identified by UUID |
 | Event | An atomic musical occurrence (note, rest, chord), identified by UUID |
 | Span | A relation connecting multiple events (slur, beam, hairpin) |
@@ -74,5 +98,28 @@ Key terms used throughout the spec:
 | Context Ring | Surrounding material at reduced detail level |
 | Overlay | Analytical metadata attached to score regions |
 | Orchestrator | System that coordinates agent tasks and manages the full score |
+| Edit Lane | A capability boundary defining what an agent may modify |
+| HarmonyPlan | Embedded layer for chord symbols and harmonic structure |
+| Placeholder | Explicit marker for intentionally incomplete content |
 
 See: [`/MRS-Specification-RFC#1-4-terminology`](/MRS-Specification-RFC#1-4-terminology)
+
+## Architecture at a Glance
+
+```
+         ORCHESTRATOR (owns canonical MRS-S state)
+                │
+    ┌───────────┼───────────┬───────────┐
+    ▼           ▼           ▼           ▼
+ Harmony    Melody      Orch.      Expression
+  Agent      Agent      Agent        Agent
+    │           │           │           │
+    └───────────┴───────────┴───────────┘
+                │
+         Working Set Envelopes
+         (scoped MRS-S + edit lanes)
+```
+
+Multiple agents can work in parallel, but only the orchestrator commits changes. Edit lanes ensure agents with disjoint concerns can safely edit the same region.
+
+See: [Orchestrator Contract](/orchestrator-contract) for details on lanes, transactions, and merge semantics.
