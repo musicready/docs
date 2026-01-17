@@ -1,242 +1,227 @@
 ---
 title: "Validation Rules"
-description: "Syntax, structural, musical validation rules, and validation levels for draft-aware workflows."
+description: "Progressive validation pipeline for MRS-Ops operations."
 ---
 
-See: [`/MRS-Specification-RFC#12-validation-rules`](/MRS-Specification-RFC#12-validation-rules)
+MRS uses progressive validation to catch errors before state mutation, provide specific feedback, and enable partial application when appropriate.
 
-## Validation Levels
+See: [`/MRS-Specification-RFC#13-progressive-validation`](/MRS-Specification-RFC#13-progressive-validation)
 
-MRS defines four validation levels to support iterative composition workflows from early sketches to final export.
+## Validation Pipeline
 
-```clojure
-ValidationLevel {
-  STRICT      ; All rules, errors and warnings stop processing
-  STANDARD    ; Errors stop, warnings reported
-  LENIENT     ; Only errors stop processing
-  PERMISSIVE  ; Report all, stop on nothing
-}
+```
+┌─────────────┐   ┌─────────────┐   ┌─────────────┐   ┌─────────────┐
+│   Syntax    │ → │ References  │ → │ Permissions │ → │  Musical    │
+│ Validation  │   │ Validation  │   │ Validation  │   │  Rules      │
+└─────────────┘   └─────────────┘   └─────────────┘   └─────────────┘
 ```
 
-### Level Behavior
+Operations are validated in stages. Each stage must pass before proceeding to the next.
 
-| Level | Errors | Warnings | Draft States |
-|-------|--------|----------|--------------|
-| **STRICT** | Stop | Stop | ERROR — must resolve |
-| **STANDARD** | Stop | Report | WARNING — flagged |
-| **LENIENT** | Stop | Report | Allowed |
-| **PERMISSIVE** | Report | Report | Fully supported |
+## Stage 1: Syntax Validation
 
-### Recommended Usage by Workflow Stage
+Verifies operations are well-formed.
 
-| Stage | Validation Level | Draft States |
-|-------|------------------|--------------|
-| Initial sketching | PERMISSIVE | Heavy use expected |
-| Harmonic planning | LENIENT | Placeholders for unorchestrated parts |
-| Orchestration passes | STANDARD | Progressively resolving placeholders |
-| Final review | STRICT | All placeholders must be resolved |
-| Export/publish | STRICT | No draft content allowed |
+| Check | Description |
+|-------|-------------|
+| Operation type | Recognized operation (create-event, update-event, etc.) |
+| Required fields | All required fields present |
+| Field types | Values have correct types |
+| Rational format | Beat positions are valid rationals |
 
-## Syntax Validation
+### Syntax Errors
 
-- Document matches grammar
-- All required sections present
-- Version is supported
-- No malformed tokens
+| Code | Description |
+|------|-------------|
+| SYN-001 | Unknown operation type |
+| SYN-002 | Missing required field |
+| SYN-003 | Invalid field type |
+| SYN-004 | Malformed rational number |
+| SYN-005 | Invalid tmp-id format |
 
-## Structural Validation
+## Stage 2: Reference Validation
+
+Verifies all references are valid.
+
+| Check | Description |
+|-------|-------------|
+| UUID existence | Referenced UUIDs exist in source |
+| Tmp-id uniqueness | All tmp-ids unique within envelope |
+| Cross-references | Ops can reference each other's tmp-ids |
+| Measure reference | Target measure exists |
+
+### Reference Errors
+
+| Code | Description |
+|------|-------------|
+| REF-001 | UUID not found in source |
+| REF-002 | Duplicate tmp-id |
+| REF-003 | Tmp-id referenced but not defined |
+| REF-004 | Circular reference |
+
+## Stage 3: Permission Validation
+
+Verifies operations are within granted permissions.
+
+| Check | Description |
+|-------|-------------|
+| Operation allowed | Op type in `:allowed-ops` list |
+| Lane permission | Content within granted lanes |
+| Scope bounds | Targets within granted scope |
+| Lock respect | Not modifying locked lanes |
+
+### Permission Errors
+
+| Code | Description |
+|------|-------------|
+| PERM-001 | Operation type not allowed |
+| PERM-002 | Lane not granted |
+| PERM-003 | Outside granted scope |
+| PERM-004 | Modifying locked lane |
+
+## Stage 4: Musical Rule Validation
+
+Verifies musical constraints are satisfied.
+
+### Structural Rules
 
 | Rule | Severity | Description |
 |------|----------|-------------|
-| STRUCT-001 | ERROR | Duplicate UUIDs |
-| STRUCT-002 | ERROR | Invalid measure numbers (non-positive) |
-| STRUCT-003 | ERROR | Invalid beat position |
-| STRUCT-004 | ERROR | Reference to non-existent UUID |
-| STRUCT-005 | ERROR | Missing required `:id` or `:at` |
-| STRUCT-006 | WARNING | Gap in measure numbering |
-| STRUCT-007 | WARNING | Empty measure |
+| STRUCT-001 | ERROR | Would create duplicate UUID |
+| STRUCT-002 | ERROR | Invalid measure number |
+| STRUCT-003 | ERROR | Beat position out of bounds |
+| STRUCT-004 | ERROR | Duration overflow (exceeds measure) |
+| STRUCT-005 | WARNING | Gap in measure numbering |
 
-## Musical Validation
+### Musical Rules
 
 | Rule | Severity | Description |
 |------|----------|-------------|
 | MUSIC-001 | ERROR | Tie connects different pitches |
-| MUSIC-002 | ERROR | Duration overflow |
-| MUSIC-003 | WARNING | Extreme pitch (outside practical range) |
+| MUSIC-002 | ERROR | Span endpoints reversed (from > to) |
+| MUSIC-003 | WARNING | Pitch out of instrument range |
 | MUSIC-004 | WARNING | Parallel fifths/octaves |
 | MUSIC-005 | WARNING | Voice crossing |
-| MUSIC-006 | WARNING | Large melodic leap |
+| MUSIC-006 | WARNING | Large melodic leap (> octave) |
 
-## Span Validation
-
-| Rule | Severity | Description |
-|------|----------|-------------|
-| SPAN-001 | ERROR | Span references non-existent UUID |
-| SPAN-002 | ERROR | Slur from/to identical |
-| SPAN-003 | WARNING | Slur spans more than 8 measures |
-| SPAN-004 | WARNING | Overlapping slurs |
-| SPAN-005 | FATAL | Boundary-anchored span endpoint modified |
-
-## Draft State Validation
-
-Draft states (placeholders, sketch rhythms, intent annotations) have special validation rules:
-
-| Rule | STRICT | STANDARD | LENIENT | PERMISSIVE |
-|------|--------|----------|---------|------------|
-| DRAFT-001: Placeholder exists | ERROR | WARNING | OK | OK |
-| DRAFT-002: Sketch rhythm (no pitch) | ERROR | WARNING | OK | OK |
-| DRAFT-003: HarmonyPlan without notes | ERROR | WARNING | OK | OK |
-| DRAFT-004: Intent annotation present | OK | OK | OK | OK |
-| DRAFT-005: Incomplete measure | ERROR | WARNING | OK | OK |
-
-### DRAFT-001: Placeholder Exists
-
-A placeholder region is present:
-
-```clojure
-(placeholder
-  :measures #uuid "..." #uuid "..."
-  :parts [strings]
-  :intent :texture)
-```
-
-- **STRICT**: ERROR — "Unresolved placeholder at measures 45-52 for strings"
-- **STANDARD**: WARNING — flagged for attention
-- **LENIENT/PERMISSIVE**: Allowed
-
-### DRAFT-002: Sketch Rhythm
-
-Events with `slash` pitch (rhythm without specific pitch):
-
-```clojure
-(: 0 slash.q :id #uuid "..." :at 0)
-```
-
-- **STRICT**: ERROR — "Unresolved sketch rhythm at measure 45"
-- **STANDARD**: WARNING
-- **LENIENT/PERMISSIVE**: Allowed
-
-### DRAFT-003: HarmonyPlan Without Notes
-
-Harmony events exist but corresponding note content is a placeholder:
-
-```clojure
-(harmony-event :measure #uuid "..." :chord Cm)
-;; But measure contains placeholder instead of notes
-```
-
-- **STRICT**: ERROR — "Harmony defined but notes missing"
-- **STANDARD**: WARNING
-- **LENIENT/PERMISSIVE**: Allowed (normal early-stage workflow)
-
-### DRAFT-004: Intent Annotation
-
-Intent annotations are informational and always allowed:
-
-```clojure
-(intent :target #uuid "..." :type :needs-review)
-```
-
-- All levels: OK (informational only)
-
-### DRAFT-005: Incomplete Measure
-
-A measure that has some parts filled but others empty or placeholder:
-
-- **STRICT**: ERROR if any placeholder parts remain
-- **STANDARD**: WARNING
-- **LENIENT/PERMISSIVE**: Allowed
-
-## Lane Validation
-
-When processing agent responses, lane ownership must be validated:
+### Constraint Rules
 
 | Rule | Severity | Description |
 |------|----------|-------------|
-| LANE-001 | ERROR | Agent modified field outside granted lanes |
-| LANE-002 | ERROR | Agent used operation not in allowed-ops |
-| LANE-003 | ERROR | Agent modified locked region |
-| LANE-004 | WARNING | Agent created object in shared space |
+| CONST-001 | ERROR | Violates range constraint |
+| CONST-002 | WARNING | Violates avoid constraint |
+| CONST-003 | INFO | Does not satisfy prefer constraint |
 
-### LANE-001: Out-of-Lane Modification
+## Severity Levels
 
-```clojure
-;; Agent granted: [notes]
-;; Agent modified: dynamics (expression lane)
-→ ERROR: "Modified :dyn field but expression lane not granted"
-```
+| Level | Meaning | Action |
+|-------|---------|--------|
+| ERROR | Invalid; cannot apply | Operation rejected |
+| WARNING | Suspicious; may be intentional | Apply with warning |
+| INFO | Informational; style suggestion | Apply; log info |
 
-### LANE-002: Disallowed Operation
+## Validation Results
 
-```clojure
-;; Agent allowed-ops: [upsert-event delete-event]
-;; Agent performed: insert-measures
-→ ERROR: "Operation insert-measures not in allowed-ops"
-```
-
-### LANE-003: Locked Region Modified
-
-```clojure
-;; Lock: (harmonyPlan :scope :all)
-;; Agent modified: harmony-event
-→ ERROR: "Modified locked lane harmonyPlan"
-```
-
-## Conflict Validation
-
-| Rule | Severity | Description |
-|------|----------|-------------|
-| CONFLICT-001 | ERROR | Source hash mismatch |
-| CONFLICT-002 | ERROR | Measure hash mismatch (precondition failed) |
-| CONFLICT-003 | ERROR | Same lane + same object modified by two change-sets |
-
-## Temporal Validation
-
-| Rule | Severity | Description |
-|------|----------|-------------|
-| TEMPORAL-001 | ERROR | Event `:at` doesn't match measure `:beat-start` + event beat |
-| TEMPORAL-002 | ERROR | Measure `:beat-start` not monotonically increasing |
-| TEMPORAL-003 | WARNING | Floating-point precision in timing (use rationals) |
-
-## Validation Pipeline
-
-The recommended validation pipeline order:
-
-1. **Syntax validation** — Is it parseable?
-2. **Structural validation** — Are UUIDs unique? Do references exist?
-3. **Lane validation** — Did agent stay within permissions?
-4. **Temporal validation** — Is timing consistent?
-5. **Musical validation** — Are musical rules satisfied?
-6. **Span validation** — Are spans well-formed?
-7. **Draft state validation** — Are drafts allowed at this level?
-
-## Validation Response
+### All Pass
 
 ```clojure
 (validation-result
-  :level :standard
-  :passed false
-  :errors
-    ((STRUCT-001 :message "Duplicate UUID: 018c3f40-..."
-                 :location (:measure #uuid "018c3f40-..."))
-     (LANE-001 :message "Modified expression lane without permission"
-               :location (:event #uuid "019a1b30-...")))
-  :warnings
-    ((MUSIC-004 :message "Parallel fifths between violin-1 and viola"
-                :location (:measure #uuid "018c3f40-002d-..." :beat 2))
-     (DRAFT-001 :message "Unresolved placeholder"
-                :location (:measures #uuid "..." #uuid "..."))))
+  :status passed
+  :warnings []
+  :info [])
 ```
 
-## Custom Validation Rules
-
-Implementations MAY define additional validation rules using the `x-` prefix:
+### Errors Found
 
 ```clojure
-(x-validate-house-style
-  :rule "no-open-fifths"
-  :severity warning
-  :scope [brass])
+(validation-result
+  :status rejected
+  :stage permissions
+  :errors
+    ((error :op 3 :code PERM-001 
+            :message "Operation 'create-measure' not in allowed-ops"
+            :detail (:allowed [create-event update-event delete-event]))))
 ```
 
-Custom rules SHOULD be documented and SHOULD NOT conflict with standard rules.
+### Warnings Only
+
+```clojure
+(validation-result
+  :status passed-with-warnings
+  :warnings
+    ((warning :op 2 :code MUSIC-003
+              :message "Pitch D7 exceeds clarinet-bb range [E3 C7]")))
+```
+
+## Constraint Validation
+
+Constraints from the Working Set Envelope are checked in Stage 4.
+
+### Range Constraint
+
+```clojure
+(range clarinet-bb E3 C7)
+```
+
+Checks all pitches for clarinet-bb are within E3-C7.
+
+### Avoid Constraint
+
+```clojure
+(avoid parallel-fifths violin-1)
+```
+
+Checks for parallel fifths between the modified part and violin-1.
+
+### Prefer Constraint
+
+```clojure
+(prefer chord-tones downbeats)
+```
+
+Checks if downbeat notes are chord tones. Generates INFO if not satisfied.
+
+### Density Constraint
+
+```clojure
+(note-density 2 8)
+```
+
+Checks notes per measure is between 2 and 8.
+
+## Partial Application
+
+When some operations fail:
+
+| Policy | Behavior |
+|--------|----------|
+| `all-or-nothing` | Reject entire batch on any error |
+| `partial` | Apply valid ops; return errors for invalid |
+| `interactive` | Pause and await human decision |
+
+```clojure
+(mrs-ops-result
+  :status partial
+  :applied 4
+  :rejected 2
+  :id-mapping (...)
+  :errors
+    ((error :op 5 :code MUSIC-001 :message "...")
+     (error :op 6 :code REF-003 :message "...")))
+```
+
+## Best Practices
+
+### For Agent Implementers
+
+1. Validate operations locally before sending
+2. Use tmp-ids consistently within envelope
+3. Respect constraints from Working Set
+4. Handle partial success gracefully
+
+### For Orchestrator Implementers
+
+1. Run all stages; collect all errors
+2. Provide specific, actionable error messages
+3. Include operation index in errors
+4. Support configurable severity thresholds

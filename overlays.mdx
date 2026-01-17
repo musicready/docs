@@ -1,76 +1,175 @@
 ---
 title: "Analytical Overlays"
-description: "Typed analytical metadata attached to scores for agent workflows."
+description: "Typed metadata layers attached to score regions."
 ---
 
-Overlays attach analytical metadata to scores. They provide structured information about harmonic content, motivic material, form, and other analytical dimensions.
+Overlays attach analytical metadata to score regions without modifying the score itself.
 
-See: [`/MRS-Specification-RFC#7-analytical-overlays`](/MRS-Specification-RFC#7-analytical-overlays)
+See: [`/MRS-Specification-RFC#10-analytical-overlays`](/MRS-Specification-RFC#10-analytical-overlays)
 
-## Characteristics
+## Purpose
 
-Overlays are:
+Overlays enable:
+- Harmonic analysis (chord symbols, Roman numerals)
+- Thematic analysis (motifs, themes, occurrences)
+- Form analysis (phrases, periods, sections)
+- Voice-leading analysis
+- Performance annotations
 
-- **Typed**: Different analysis types have different schemas
-- **Attributable**: Track provenance (author, timestamp)
-- **Optional**: Renderers ignore them; agents can use them
-- **Separable**: Can be recomputed without touching musical content
+This information enriches context views and the structural index without cluttering the score content.
 
-## Structure
+## Overlay Structure
 
 ```clojure
 (overlays
-  (overlay :id harmonic-analysis :author "analysis-agent"
-    :created "2025-12-12T10:30:00Z"
+  (overlay :id harmonic-analysis
+    :type harmonic
+    :author "harmony-agent"
+    :created "2026-01-17T10:30:00Z"
     
-    (region 
-      :from #uuid "018c3f40-0001-..." 
-      :to #uuid "018c3f40-0004-..." 
-      :chord Cm :function i :cadence none)
-    (region 
-      :from #uuid "018c3f40-0005-..." 
-      :to #uuid "018c3f40-0008-..."
-      :chord Fm :function iv))
+    :regions
+      ((region :measures #uuid "..." #uuid "..."
+               :content
+                 (chord :beat 0 :symbol Cm :function i)
+                 (chord :beat 2 :symbol Fm :function iv)
+                 (chord :beat 0 :symbol G7 :function V7))))
   
-  (overlay :id motivic-analysis :author "theme-tracker"
-    (motive :id theme-a 
-      :signature [0 2 4 5 7] 
-      :contour [up up up down])
+  (overlay :id motivic-analysis
+    :type thematic
+    :author "analysis-agent"
+    :created "2026-01-17T10:30:00Z"
     
-    (occurrence 
-      :measure #uuid "018c3f40-0001-..." 
-      :part violin-1 :voice v1 :beat 0 
-      :motive theme-a :transform original)
-    (occurrence 
-      :measure #uuid "018c3f40-0020-..." 
-      :part viola :voice v1 :beat 2
-      :motive theme-a :transform inversion))
-  
-  (overlay :id form-analysis :author "form-agent"
-    (section :type exposition
-      :from #uuid "018c3f40-0001-..." 
-      :to #uuid "018c3f40-0064-...")
-    (section :type development
-      :from #uuid "018c3f40-0065-..." 
-      :to #uuid "018c3f40-0120-...")))
+    :themes
+      ((theme :id theme-a :label "Main theme"
+              :first-occurrence #uuid "..."
+              :characteristics "descending fourth, dotted rhythm")
+       (theme :id theme-b :label "Second theme"
+              :first-occurrence #uuid "..."
+              :characteristics "lyrical, stepwise"))))
 ```
 
 ## Overlay Types
 
-| Type | Content |
-|------|---------|
-| `harmonic-analysis` | Chord symbols, Roman numerals, cadences |
-| `motivic-analysis` | Theme definitions and occurrences |
-| `form-analysis` | Structural sections |
-| `voice-leading` | Part writing analysis |
-| `orchestration` | Doubling and texture analysis |
+### Harmonic Analysis
 
-## Operations
+```clojure
+(overlay :id harmonic-analysis
+  :type harmonic
+  :author "harmony-agent"
+  :regions
+    ((region :measures #uuid "..." #uuid "..."
+             :content
+               (chord :beat 0 :symbol Cm :function i :inversion root)
+               (chord :beat 2 :symbol Ddim7 :function viio7/V)
+               (chord :beat 0 :symbol G7 :function V7 :cadence half))))
+```
 
-Overlays can be:
+| Field | Description |
+|-------|-------------|
+| `:symbol` | Chord symbol (Cm, G7, etc.) |
+| `:function` | Roman numeral function |
+| `:inversion` | root, first, second, third |
+| `:cadence` | Cadence type if applicable |
 
-- **Created**: Agent analyzes score, produces overlay
-- **Queried**: Agent requests specific overlay
-- **Merged**: Multiple overlays combined
-- **Recomputed**: Overlay regenerated after score changes
+### Thematic Analysis
 
+```clojure
+(overlay :id motivic-analysis
+  :type thematic
+  :themes
+    ((theme :id theme-a 
+            :label "Main theme"
+            :first-occurrence #uuid "..."
+            :characteristics "descending fourth, dotted rhythm"
+            :occurrences [#uuid "..." #uuid "..." #uuid "..."])
+     (theme :id theme-b
+            :label "Second theme"
+            :first-occurrence #uuid "...")))
+```
+
+### Form Analysis
+
+```clojure
+(overlay :id form-analysis
+  :type form
+  :structure
+    ((section :type exposition :measures #uuid "..." #uuid "...")
+     (section :type development :measures #uuid "..." #uuid "...")
+     (section :type recapitulation :measures #uuid "..." #uuid "..."))
+  :phrases
+    ((phrase :type antecedent :measures #uuid "..." #uuid "...")
+     (phrase :type consequent :measures #uuid "..." #uuid "...")))
+```
+
+### Voice-Leading Analysis
+
+```clojure
+(overlay :id voice-leading
+  :type voice-leading
+  :issues
+    ((issue :type parallel-fifths 
+            :location (:measure #uuid "..." :beat 2)
+            :parts [soprano bass])
+     (issue :type hidden-octaves
+            :location (:measure #uuid "..." :beat 0)
+            :parts [alto tenor])))
+```
+
+## Overlay Lifecycle
+
+| Lifecycle | Description |
+|-----------|-------------|
+| **Persistent** | Stored with the score, survives save/load |
+| **Session** | Valid only for current editing session |
+| **Derived** | Recomputed after score changes |
+
+### Derived Overlays
+
+Some overlays can be automatically derived:
+- Key signature regions (from measure attributes)
+- Tempo regions (from tempo markings)
+- Rehearsal structure (from rehearsal marks)
+
+Others require analysis:
+- Harmonic function (needs chord identification)
+- Thematic material (needs pattern recognition)
+- Form labels (needs structural analysis)
+
+## Usage in Context Views
+
+Overlays feed into context views:
+
+```clojure
+(context-view harmonic-context
+  :source overlay:harmonic-analysis
+  :measures #uuid "..." #uuid "..."
+  :content
+    (harmony-events
+      (chord :measure #uuid "..." :beat 0 :symbol Cm :function i)
+      ...))
+```
+
+## Usage in Structural Index
+
+Overlays enrich the structural index:
+
+```clojure
+(structural-index
+  ...
+  :harmonic-spine (:ref overlay:harmonic-analysis)
+  :thematic-catalog (:ref overlay:motivic-analysis)
+  ...)
+```
+
+## Overlay Attribution
+
+Every overlay includes:
+
+| Field | Description |
+|-------|-------------|
+| `:id` | Unique identifier |
+| `:type` | Overlay type |
+| `:author` | Who created it (agent or human) |
+| `:created` | Creation timestamp |
+
+This enables tracking provenance and managing multiple analyses.

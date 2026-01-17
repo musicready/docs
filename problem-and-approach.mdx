@@ -40,14 +40,16 @@ Musical decisions require understanding surrounding material. Writing a clarinet
 
 Simple "slice some measures as text" approaches fail because music is structurally entangled: meter, phrasing, harmony, and spans (slurs, hairpins, pedal) all interact across measure boundaries.
 
-### 3. The Structural Fragility Problem
+### 3. The Reliability Problem
 
-Existing formats use positional references that break during editing:
-- Insert a measure → all measure numbers after it change
-- Delete a section → references to "measure 45" now point to wrong content
-- If an LLM miscounts one duration, all subsequent events are misaligned
+Existing approaches ask AI to emit complete, structurally-valid score fragments. This creates high failure rates:
 
-Implicit state creates cascading errors. One mistake propagates through the entire score.
+- **Accidental omissions**: Agent returns less content than given → content silently deleted
+- **Calculation errors**: Miscomputed absolute positions, duration sums that don't add up
+- **Hallucinated references**: Agent references IDs that don't exist in the score
+- **Format violations**: Malformed syntax, missing required fields
+
+Even with good models, these failures require multiple repair loops, destroying productivity.
 
 ---
 
@@ -72,56 +74,72 @@ Implicit state creates cascading errors. One mistake propagates through the enti
 
 ## The MRS Solution
 
-MRS solves these problems through three key design decisions:
+MRS solves these problems through architectural separation:
 
-### 1. UUID-First Identity
+### 1. Separate Storage from Mutation
 
-Every measure, event, and span carries a stable UUIDv7 identifier:
+**MRS-S** (storage): Complete, archival-quality encoding with stable UUIDs. Agents READ this.
+
+**MRS-Ops** (mutation): Typed operation protocol with orchestrator-derived fields. Agents WRITE this.
+
+```
+Agent reads:  Working Set Envelope (MRS-S fragment + context views)
+Agent writes: MRS-Ops (typed operations with tmp-ids)
+Orchestrator: Validates → Maps tmp-ids to UUIDs → Computes derived fields → Applies
+```
+
+This eliminates:
+- Accidental deletions (explicit create/update/delete operations)
+- Calculation errors (orchestrator computes `:at`, `:beat-start`)
+- Hallucinated references (orchestrator validates all refs before application)
+
+### 2. Orchestrator Authority
+
+The orchestrator is the sole authority for:
+- UUID minting (agents use temporary IDs)
+- Derived field computation
+- Canonical state management
+- Validation and application
+
+Agents cannot create invalid references or miscalculate derived fields—the orchestrator handles it.
+
+### 3. Task-Adaptive Context Views
+
+Instead of fixed "near/far" reduction rings, agents receive context views tailored to their specific task:
+
+| Task Type | Context Views |
+|-----------|---------------|
+| Countermelody | Melodic reference, harmonic context, phrase structure |
+| Orchestration | Orchestration map, texture density, dynamics profile |
+| Dynamics pass | Phrase structure, existing dynamics, climax points |
+
+This provides what's actually needed, not just "nearby measures at reduced detail."
+
+### 4. Professional Orchestration Semantics
+
+The **Player → Instrument → Staff** model supports real-world orchestration:
 
 ```clojure
-(measure 
-  :id #uuid "018c3f40-002d-7890-abcd-ef1234567890"  ; Stable—survives edits
-  :number 45                                         ; Display only—can change
-  :beat-start 487+1/4
-  ...)
+(player woodwind-2
+  :name "Flute 2 / Piccolo"
+  :instruments [flute-2 piccolo]
+  :default flute-2)
 ```
 
-- `:id` is immutable and used for all internal references
-- `:number` is for human navigation only
-- Insert or delete measures → UUIDs remain stable, references survive
+- Instrument doubling (Flute 2 / Piccolo)
+- Mid-score instrument changes
+- Transposition handling across changes
+- Percussion kits
 
-### 2. Working Set Envelopes with Context
+### 5. Progressive Validation
 
-Instead of giving AI the whole score or just a slice, MRS provides **bounded fragments with graduated context**:
+Operations are validated in stages:
+1. **Syntax**: Operation is well-formed
+2. **References**: All IDs exist (or are valid tmp-ids)
+3. **Permissions**: Operation within granted lanes/scope
+4. **Musical rules**: Constraints satisfied (range, parallel fifths, etc.)
 
-```
-Full Score (6MB, 1.5M tokens)
-         │
-         ▼ extract
-┌─────────────────────────────────────────┐
-│  Working Set Envelope                    │
-│                                          │
-│  :content        Full detail (writable)  │
-│  :context-near   Adjacent (read-only)    │
-│  :context-far    Distant (reduced)       │
-│  :synopsis-ref   Structural overview     │
-└─────────────────────────────────────────┘
-         │
-         ▼ agent edits
-         │
-         ▼ replace
-Full Score (updated)
-```
-
-Agents see what they need, nothing more. Context rings provide surrounding material at graduated detail levels. Synopsis provides global structural awareness.
-
-### 3. Single Syntax Throughout
-
-Agents receive valid MRS-S and return valid MRS-S. No second format, no abbreviations, no conversion step. Extraction and replacement are trivial operations:
-
-```
-replace(S, identity(extract(S, P))) ≡ S
-```
+Errors caught before state mutation. Specific feedback. No silent corruption.
 
 ---
 
@@ -129,19 +147,22 @@ replace(S, identity(extract(S, P))) ≡ S
 
 ### The Scale Problem → Solved by Scoped Extraction
 
-Working Set Envelopes reduce a 1.5M token orchestral score to a focused fragment (typically 5-50K tokens) with appropriate context. Agents operate on bounded regions while understanding their surroundings.
+Working Set Envelopes reduce a 1.5M token orchestral score to a focused fragment (typically 5-50K tokens) with task-appropriate context.
 
-### The Context Problem → Solved by Context Rings + Synopsis
+### The Context Problem → Solved by Task-Adaptive Views
 
-Context rings provide graduated detail: full resolution nearby, reduced detail farther out. Synopsis provides structural overview (form, key areas, thematic material) without loading full content.
+Context views provide what's actually needed for the task—melodic references, harmonic context, texture maps—not fixed "more measures at reduced detail."
 
-### The Structural Fragility Problem → Solved by UUID Identity
+### The Reliability Problem → Solved by Architecture
 
-All references use stable UUIDs. Insert measures, delete sections, reorder movements—references survive because they point to identity, not position.
+| Failure Mode | How MRS Eliminates It |
+|--------------|----------------------|
+| Accidental deletion | Explicit operations (create/update/delete) |
+| Calculation errors | Orchestrator computes derived fields |
+| Hallucinated references | Orchestrator validates all refs |
+| Format violations | Typed operations with schema |
 
 ### The Iteration Problem → Solved by the Orchestrator Pattern
-
-A single-writer orchestrator coordinates multiple specialist agents:
 
 ```
          ORCHESTRATOR (owns canonical state)
@@ -151,7 +172,7 @@ A single-writer orchestrator coordinates multiple specialist agents:
      Agent      Agent     Agent      Agent
 ```
 
-Agents can run in parallel, but only the orchestrator commits changes. This avoids multi-writer complexity while enabling multi-agent power.
+Agents write operations; orchestrator validates and applies. Conflicts detected via source-hash. Lane bundles grant appropriate permissions.
 
 ---
 
@@ -163,9 +184,10 @@ This means supporting:
 
 1. **Structural creation**: Insert measures, sections, movements—not just edit existing content
 2. **Incomplete states**: Early-stage work has placeholders ("strings texture TBD", "orchestrate later")
-3. **Cross-boundary spans**: Hairpins, slurs, pedal marks that cross edit boundaries
-4. **Human-in-the-loop checkpoints**: Lock form, lock harmony, lock orchestration at appropriate stages
-5. **Conflict-free iteration**: Multiple agents contributing without destructive overwrites
+3. **Professional orchestration**: Player/instrument model with doubling, switching, condensing
+4. **Cross-boundary spans**: Hairpins, slurs, pedal marks that cross edit boundaries
+5. **Human-in-the-loop checkpoints**: Lock form, lock harmony, lock orchestration at appropriate stages
+6. **Low repair loops**: Typed operations + progressive validation keep iteration fast
 
 If MRS handles symphonies-from-scratch, it handles everything simpler too.
 
@@ -175,12 +197,12 @@ If MRS handles symphonies-from-scratch, it handles everything simpler too.
 
 ### 1. The Orchestrator is the Product
 
-The core IP is not the syntax—it's the **orchestrator + validation + merge semantics**. MRS-S is the canonical representation; the orchestrator is what makes iterative composition safe and reliable.
+The core IP is not the syntax—it's the **orchestrator + validation + typed operations**. MRS-S is the canonical representation; the orchestrator is what makes iterative composition safe and reliable.
 
 ### 2. AI Quality Will Improve
 
 MRS doesn't require AI to be perfect. It provides:
-- **Safety rails**: Validation catches errors before they propagate
+- **Safety rails**: Progressive validation catches errors before they propagate
 - **Bounded scope**: Mistakes are contained to the working set
 - **Human review gates**: Checkpoints for approval before proceeding
 
@@ -190,7 +212,7 @@ As AI improves, the system captures that improvement. As AI makes errors, the sy
 
 Professional composition is inherently collaborative. MRS supports:
 - Human approval at structural checkpoints
-- Intelligible diffs for reviewing AI changes
+- Semantic diffs for reviewing AI changes (operations, not text noise)
 - Playback preview integration
 - The ability to lock decisions ("form is final") and iterate on details
 
@@ -198,16 +220,17 @@ Professional composition is inherently collaborative. MRS supports:
 
 ## Feasibility Summary
 
-| Challenge | Solution | Feasibility |
-|-----------|----------|-------------|
+| Challenge | Solution | Status |
+|-----------|----------|--------|
 | Scale (scores too large) | Working Set Envelopes with scoped extraction | **Solved** |
-| Context (decisions need surroundings) | Context rings + Synopsis | **Solved** |
+| Context (decisions need surroundings) | Task-adaptive context views | **Solved** |
+| Reliability (agents make errors) | MRS-Ops + orchestrator authority + progressive validation | **Solved** |
 | Structural fragility (references break) | UUID-first identity | **Solved** |
-| Safe iteration (edits conflict) | Single-writer orchestrator + edit lanes | **Achievable** |
-| From-scratch composition | Draft states + checkpoints + HarmonyPlan layer | **Achievable** |
-| Span safety (hairpins break) | Boundary rules + span repair protocol | **Achievable** |
+| Professional orchestration | Player-Instrument-Staff model | **Solved** |
+| Safe iteration (edits conflict) | Single-writer orchestrator + lane bundles | **Solved** |
+| From-scratch composition | Draft states + checkpoints | **Solved** |
 
-The approach is **feasible**. The core architectural decisions are sound. What remains is disciplined implementation of the orchestrator semantics—edit lanes, transaction model, checkpoint enforcement—which are well-understood problems with clear solutions.
+The approach is **feasible**. The core architectural decisions are sound. What remains is disciplined implementation of the orchestrator semantics—validation pipeline, operation application, context generation—which are well-understood problems with clear solutions.
 
 ---
 
@@ -215,11 +238,10 @@ The approach is **feasible**. The core architectural decisions are sound. What r
 
 The following specifications complete the architecture for professional-scale AI composition:
 
-- [Orchestrator Contract](/orchestrator-contract) — Edit lanes, transaction model, merge semantics
-- [Draft States](/draft-states) — Placeholder primitives for from-scratch composition
-- [Working Set Envelope](/working-set-envelope) — Scope grants with lane permissions
+- [Orchestrator Contract](/orchestrator-contract) — Validation, transactions, conflict detection
+- [Working Set Envelope](/working-set-envelope) — Scoped extraction with context
+- [MRS-Ops Protocol](/agentic-operations) — Typed operations for agent mutations
 
 See also:
 - [Design Principles](/design-principles) — Core philosophy
 - [Architecture Overview](/architecture-overview) — Component relationships
-- [Extract-Replace Protocol](/extract-replace-protocol) — How extraction and replacement work

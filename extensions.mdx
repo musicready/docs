@@ -5,7 +5,7 @@ description: "How to extend MRS without breaking the core model."
 
 MRS provides explicit extension mechanisms to support additional domains while keeping a stable core.
 
-See: [`/MRS-Specification-RFC#13-extension-mechanisms`](/MRS-Specification-RFC#13-extension-mechanisms)
+See: [`/MRS-Specification-RFC#15-extension-mechanisms`](/MRS-Specification-RFC#15-extension-mechanisms)
 
 ## Custom Properties
 
@@ -14,7 +14,6 @@ Events, spans, and directions support custom properties with the `x-` prefix:
 ```clojure
 (: 0 C4.q 
   :id #uuid "..."
-  :at 0
   :dyn f
   :x-source "manuscript-page-47"
   :x-confidence 0.85
@@ -27,13 +26,15 @@ Custom properties:
 - SHOULD be documented by the creating system
 - MAY be ignored by systems that don't recognize them
 
+Note: The `:at` field is not shown above because it is a derived field computed by the orchestrator, not provided by agents.
+
 ## Namespace Extensions
 
 For complex extensions, use namespaced properties:
 
 ```clojure
 (: 0 C4.q
-  :id #uuid "..." :at 0
+  :id #uuid "..."
   :analysis:roman-numeral "I"
   :analysis:function "tonic"
   :mei:xml-id "note-001")
@@ -49,3 +50,22 @@ For complex extensions, use namespaced properties:
 | `midi:*` | MIDI-specific data |
 | `render:*` | Rendering hints |
 | `edit:*` | Editorial metadata |
+
+## Extensions in MRS-Ops
+
+When creating events via MRS-Ops, custom properties can be included in the operation:
+
+```clojure
+(create-event
+  :tmp-id "e1"
+  :measure #uuid "..."
+  :instrument violin-1
+  :voice v1
+  :beat 0
+  :pitch C4
+  :duration q
+  :x-source "manuscript-page-47"
+  :x-confidence 0.85)
+```
+
+The orchestrator preserves custom properties when applying the operation to canonical state.

@@ -1,319 +1,234 @@
 ---
 title: "Extract-Replace Protocol"
-description: "The protocol for creating Working Set Envelopes, applying agent responses, and managing typed change-sets."
+description: "How Working Set Envelopes are created and how MRS-Ops are applied."
 ---
 
-The Extract-Replace Protocol defines how orchestrators create Working Set Envelopes from MRS-S documents, how to apply agent responses back, and how change-sets are managed for audit and merge.
+The Extract-Replace Protocol defines how the orchestrator creates Working Set Envelopes from canonical MRS-S and how agent operations (MRS-Ops) are validated and applied.
 
-See: [`/MRS-Specification-RFC#9-extract-replace-protocol`](/MRS-Specification-RFC#9-extract-replace-protocol)
+See: [`/MRS-Specification-RFC#7-working-set-envelope`](/MRS-Specification-RFC#7-working-set-envelope)
 
-## Overview
+## Protocol Overview
 
 ```
 ┌─────────────────┐         extract         ┌─────────────────────────┐
 │     MRS-S       │ ──────────────────────► │  Working Set Envelope   │
-│    (Source)     │                         │  (scoped MRS-S + lanes) │
-│                 │ ◄────────────────────── │                         │
-└─────────────────┘         replace         └─────────────────────────┘
-                               │
-                               ▼
-                    ┌─────────────────────┐
-                    │  Typed Change-Set   │
-                    │  (ops + audit log)  │
-                    └─────────────────────┘
+│    (Source)     │                         │  (MRS-S + context)      │
+│                 │                         └─────────────────────────┘
+│                 │                                    │
+│                 │                              agent work
+│                 │                                    │
+│                 │                                    ▼
+│                 │                         ┌─────────────────────────┐
+│                 │ ◄────────────────────── │       MRS-Ops           │
+│                 │    validate + apply     │  (typed operations)     │
+└─────────────────┘                         └─────────────────────────┘
 ```
 
-The key simplification: **replacement is trivial** because agents return valid MRS-S fragments that directly substitute for the extracted scope. The orchestrator converts this into typed operations for merge logic, audit, and rollback.
+## Extraction (MRS-S → Working Set)
 
-## Extraction
-
-Extraction produces a Working Set Envelope from a source document:
-
-1. Validate requested scope (measure UUIDs exist, parts exist)
-2. Compute source hash for conflict detection
-3. Resolve inherited state (time/key/tempo at extraction start)
-4. Copy measures in UUID range
-5. Build context rings at reduced detail
-6. Include spans (mark boundary crossings)
-7. Attach lane permissions and locks
-8. Build envelope with metadata and synopsis reference
-
-See: [`/MRS-Specification-RFC#9-2-extraction-mrs-s--working-set`](/MRS-Specification-RFC#9-extract-replace-protocol)
-
-## Replacement
-
-Replacement applies agent output back to the source:
-
-1. Verify source hash (for conflict detection)
-2. Validate response scope (UUID range, parts)
-3. **Validate lane permissions** (reject out-of-lane changes)
-4. Parse response content as MRS-S
-5. Assign UUIDs to new objects lacking them
-6. **Convert to typed change-set** (for merge, audit, rollback)
-7. **Apply change-set** to internal model
-8. Handle span updates
-9. Full validation
-10. Serialize updated MRS-S
-
-See: [`/MRS-Specification-RFC#9-3-replacement-working-set--mrs-s`](/MRS-Specification-RFC#9-extract-replace-protocol)
-
-## Typed Change-Sets
-
-Even though agents return MRS-S fragments, the orchestrator internally converts each response into a **typed change-set**. This enables:
-
-- **Lane enforcement**: Validate changes stay within granted lanes
-- **Layered merges**: Apply changes from multiple agents to the same region
-- **Human review**: Generate intelligible diffs
-- **Audit trail**: Track what changed, when, by whom
-- **Rollback**: Revert specific change-sets if needed
-
-### Change-Set Structure (MRS-S serialization)
-
-```clojure
-(changeset
-  :id #uuid "019a1b2c-..."
-  :agent "orchestration-agent"
-  :created "2025-01-08T21:00:00Z"
-  :base-revision "rev:abc123"
-  
-  ;; Scope grant that was active
-  :scope-grant
-    (:measures #uuid "..." #uuid "...")
-    (:parts [violin-1 violin-2])
-    (:lanes [notes expression])
-    (:allowed-ops [upsert-event delete-event upsert-span])
-  
-  ;; What the agent assumed was true
-  :preconditions
-    ((measure #uuid "..." :hash "sha256:...")
-     (measure #uuid "..." :hash "sha256:..."))
-  
-  ;; Typed operations
-  :ops
-    ((upsert-event 
-       :id #uuid "019a1b30-..." 
-       :measure #uuid "018c3f40-002d-..."
-       :part violin-1
-       :lane notes
-       :data (: 0 G5.q :dyn f :at 487+1/4))
-     (delete-event :id #uuid "018c3f2a-..." :lane notes)
-     (upsert-span
-       :id #uuid "019a1b35-..."
-       :type slur
-       :lane expression
-       :from #uuid "019a1b30-..."
-       :to #uuid "019a1b32-..."))
-  
-  ;; Validation results
-  :validation
-    (:level standard
-     :errors []
-     :warnings [])
-  
-  ;; Human review status
-  :human-review
-    (:required false
-     :status :auto-approved))
-```
-
-### Operation Types
-
-#### Content Operations
-| Operation | Description | Lane-checkable |
-|-----------|-------------|----------------|
-| `upsert-event` | Create or update event by `:id` | Yes |
-| `delete-event` | Remove event by `:id` | Yes |
-| `upsert-span` | Create or update span by `:id` | Yes |
-| `delete-span` | Remove span by `:id` | Yes |
-| `set-attr` | Modify specific field | Yes |
-
-#### Structure Operations (orchestrator-gated)
-| Operation | Description | Review |
-|-----------|-------------|--------|
-| `insert-measures` | Insert new measures after ID | Required |
-| `delete-measures` | Remove measures by ID | Required |
-
-#### Special Operations (orchestrator-mediated)
-| Operation | Description | Review |
-|-----------|-------------|--------|
-| `span-repair` | Adjust cross-boundary span endpoints | Recommended |
-| `lyrics-alignment-repair` | Adjust notes for lyric alignment | Recommended |
-
-## Layered Merge Policy
-
-When multiple agents edit the same region, the orchestrator applies a **layered merge** based on lane disjointness.
-
-### Auto-Merge Allowed When ALL True
-
-1. Target measures/parts may overlap
-2. **Lanes are disjoint** (no lane in both change-sets)
-3. Operations do not touch the same object IDs
-4. No structure/temporal operations (or already committed)
-
-### Example: Safe Layered Merge
+### Extraction Parameters
 
 ```
-Agent A (notes lane):
-  upsert-event violin-1 v1 (: 0 G5.q ...)
-  upsert-event violin-1 v1 (: 1 A5.q ...)
-
-Agent B (expression lane):
-  upsert-span hairpin crescendo from #uuid "..." to #uuid "..."
-  upsert-event violin-1 :dyn f (dynamics only)
-
-Orchestrator: merges both → violin-1 has notes + hairpin + dynamics
+ExtractParams {
+  measures: Range<UUID>              ; Required: measure UUID range
+  instruments: Set<InstrumentId>     ; Required: instruments to include
+  voices: Set<VoiceId>?              ; Optional: filter voices
+  bundle: BundleId                   ; Lane bundle to grant
+  task: String?                      ; Task description
+  constraints: List<Constraint>?     ; Validation rules
+  context_views: List<ViewType>?     ; Requested context views
+}
 ```
 
-### Hard Conflict When ANY True
+### Extraction Algorithm
 
-1. Same lane touches same object ID
-2. Structure changed and change-set wasn't rebased
-3. Span edits would alter out-of-scope endpoints
+```
+function extract(source: MRS-S, params: ExtractParams) -> WorkingSetEnvelope:
+  
+  1. Validate params
+     - All requested measure UUIDs exist
+     - All requested instruments exist
+     - Bundle is valid
+  
+  2. Compute source hash (SHA-256)
+  
+  3. Resolve inherited state at extraction start
+     - Time signature, key, tempo at first measure
+  
+  4. Build content
+     - Copy measures in UUID range
+     - Copy instrument definitions
+     - Copy relevant spans (mark boundary crossings)
+  
+  5. Generate task-adaptive context views
+     - Select views based on task type
+     - Extract relevant content for each view
+  
+  6. Build envelope with scope, permissions, context
+  
+  7. Return WorkingSetEnvelope
+```
 
-### Merge Order (Deterministic)
+### Self-Containment
 
-When multiple change-sets are eligible:
+The extracted `:content` MUST be parseable as standalone MRS-S:
+- Instrument definitions included
+- Time/key/tempo state declared
+- Spans have both endpoints or boundary markers
 
-1. `structure` operations first
-2. `temporal` operations (triggers timing recomputation)
-3. `harmonyPlan` operations
-4. `notes` operations
-5. `expression` operations
-6. `technique` operations
-7. `lyricsText` operations
+## Application (MRS-Ops → MRS-S)
 
-## Conflict Detection
+### Application Algorithm
 
-### Source Hash Verification
+```
+function apply(source: MRS-S, ops: MRS-Ops) -> Result<MRS-S>:
 
-The `source-hash` in the agent response must match the hash from extraction:
+  1. Verify source hash (conflict detection)
+     - If hash mismatch → return Conflict error
+  
+  2. Progressive validation
+     a) Syntax validation (all ops well-formed)
+     b) Reference validation (all IDs exist or valid tmp-ids)
+     c) Permission validation (ops within lanes/scope)
+     d) Musical rule validation (constraints satisfied)
+  
+  3. If validation fails → return ValidationError with details
+  
+  4. Map tmp-ids to UUIDs
+     - Generate UUIDs in deterministic order
+     - Build id-mapping
+  
+  5. Apply operations in order
+     - For create-event: add to measure
+     - For update-event: modify existing event
+     - For delete-event: remove from measure
+     - For create-span: add to spans section
+     - etc.
+  
+  6. Compute derived fields
+     - Calculate :at for new events
+     - Update :beat-start if measures inserted
+  
+  7. Full validation of result
+  
+  8. Record transaction in audit trail
+  
+  9. Return updated MRS-S with id-mapping
+```
 
-```clojure
-;; In Working Set Envelope (request)
-:source-hash "sha256:a3f2c1b9e4d7..."
+### Conflict Detection
 
-;; In Working Set Response
-:source-hash "sha256:a3f2c1b9e4d7..."  ; Must match
+The orchestrator uses source-hash for conflict detection:
+
+```
+1. Working Set created with source-hash H1
+2. Agent produces operations (takes time)
+3. Before applying, orchestrator checks current hash
+4. If current hash ≠ H1 → conflict
 ```
 
 If hashes don't match, the canonical score changed since extraction → conflict.
 
-### Per-Object Hash Verification
+### Conflict Resolution Options
 
-For finer-grained conflict detection, the orchestrator can check individual measure/object hashes:
+| Option | Description |
+|--------|-------------|
+| **Reject** | Return error; agent must request fresh envelope |
+| **Rebase** | Transform operations to apply on new state (if possible) |
+| **Merge** | Combine changes if in disjoint regions/lanes |
+
+## Progressive Validation
+
+Operations are validated in stages:
+
+### Stage 1: Syntax
+- Operation type recognized
+- Required fields present
+- Field types correct
+
+### Stage 2: References
+- All UUIDs exist in source
+- All tmp-ids unique within envelope
+- Cross-references valid (e.g., span "from" references "e1" that exists)
+
+### Stage 3: Permissions
+- Operation type in `:allowed-ops`
+- Content within granted `:bundle` lanes
+- Scope within granted `:scope`
+
+### Stage 4: Musical Rules
+- Constraints satisfied (range, parallel fifths, etc.)
+- Duration sums correct
+- Ties connect same pitches
+
+## Derived Field Computation
+
+The orchestrator computes derived fields:
+
+### `:at` (Absolute Beat Position)
+
+For each event:
+```
+event.:at = measure.:beat-start + event.beat
+```
+
+Agent never provides `:at`; orchestrator computes it.
+
+### `:beat-start` (Measure Start)
+
+When measures are inserted:
+```
+1. Compute duration of inserted measure
+2. Update :beat-start of all subsequent measures
+```
+
+## Operation Ordering
+
+Operations are applied in order. Dependencies must be respected:
+- Create measure before creating events in it
+- Create events before creating spans referencing them
+
+The orchestrator MAY reorder to satisfy dependencies if unambiguous.
+
+## Partial Application
+
+When some operations fail validation:
 
 ```clojure
-:preconditions
-  ((measure #uuid "018c3f40-002d-..." :hash "sha256:...")
-   (measure #uuid "018c3f40-002e-..." :hash "sha256:..."))
+(mrs-ops-result
+  :status partial
+  :applied 4
+  :rejected 2
+  :id-mapping
+    (("e1" #uuid "...")
+     ("e2" #uuid "...")
+     ("e3" #uuid "...")
+     ("e4" #uuid "..."))
+  :errors
+    ((error :op 5 :code MUSIC-001 :message "Tie connects different pitches")
+     (error :op 6 :code REF-001 :message "Span references non-existent tmp-id")))
 ```
 
-### Conflict Resolution
+Policy options:
+- **All-or-nothing**: Reject entire batch on any failure
+- **Partial**: Apply valid ops, report failures
+- **Interactive**: Pause for human decision
 
-When a conflict is detected:
+## Transaction Recording
 
-1. **Reject and regenerate**: Deny the change-set, provide fresh WSE
-2. **Human review**: Route to human for manual resolution
-3. **Rebase** (if safe): Re-extract, re-apply agent logic
-
-Default: reject and regenerate.
-
-## UUID-Based Operations
-
-All scope specifications use UUIDs:
+Every successful application is recorded:
 
 ```clojure
-:scope
-  (:measures #uuid "018c3f40-002d-..." #uuid "018c3f40-0034-...")
-  (:parts [clarinet-1])
-:display-hint (:measures 45 52)  ; Informational only
+(transaction
+  :id #uuid "..."
+  :timestamp "2026-01-17T10:30:00Z"
+  :agent "countermelody-agent"
+  :source-hash "sha256:..."
+  :result-hash "sha256:..."
+  :ops-applied 6
+  :scope (:measures #uuid "..." #uuid "..." :instruments [clarinet-bb])
+  :bundle orchestrate
+  :id-mapping (...))
 ```
 
-## Insertion Operations
-
-When agents need to insert new measures:
-
-```clojure
-(working-set-response
-  :scope (...)
-  
-  :insertions
-    ((after #uuid "018c3f40-0030-..."
-      (measure :id #uuid "018c3f50-new1-..." :number :auto ...)))
-  
-  :content ...)
-```
-
-The orchestrator:
-1. Assigns `:number` values based on position
-2. Updates `:beat-start` and `:sec-start` for subsequent measures
-3. Preserves all UUID references
-4. Triggers human review (structure operations require review)
-
-## Round-Trip Guarantee
-
-For any valid MRS-S document S and extraction parameters P:
-
-```
-replace(S, identity(extract(S, P))) ≡ S
-```
-
-Extracting and immediately replacing unchanged content produces an identical document.
-
-See: [`/MRS-Specification-RFC#9-4-round-trip-guarantee`](/MRS-Specification-RFC#9-extract-replace-protocol)
-
-## Cross-Boundary Spans
-
-When spans cross the Working Set boundary, special handling is required.
-
-### Boundary Marking
-
-Spans that cross boundaries are marked:
-
-```clojure
-(slur
-  :id #uuid "018c3f2a-..."
-  :from #uuid "018c3f1a-..."
-  :to #uuid "018c3f2b-..."
-  :boundary-exit :to)  ; 'to' endpoint is outside scope
-```
-
-### Write Protection
-
-Cross-boundary spans are **write-protected at their boundary endpoints**:
-
-- Agents may NOT move/delete boundary endpoints
-- Agents may NOT create spans that cross out of scope
-- Agents MAY modify non-endpoint properties (e.g., `:placement`)
-
-### Span Repair
-
-To modify boundary endpoints, agents must request a `span-repair` operation:
-
-```clojure
-(span-repair
-  :span-id #uuid "018c3f2c-..."
-  :requested-change
-    (:extend-to #uuid "019a1b40-...")
-  :justification "Phrase extends through measure 56")
-```
-
-The orchestrator validates and either applies or routes to human review.
-
-See: [Orchestrator Contract - Cross-Lane Operations](/orchestrator-contract#cross-lane-operations)
-
-## Implementation Model
-
-The orchestrator maintains:
-
-1. **Canonical MRS-S** — The source of truth (internal model, serializable to MRS-S)
-2. **Change-set log** — Typed operations for audit/rollback
-3. **Lock state** — Active checkpoints and their scopes
-4. **Pending reviews** — Operations awaiting human approval
-
-### Runtime vs Serialization
-
-- **Runtime**: Internal structured model for fast queries, invariant enforcement, transaction application
-- **Serialization**: MRS-S for storage, interchange, and agent I/O
-
-The invariant: `serialize(parse(mrs_s)) == normalize(mrs_s)`
+Transactions enable audit trail, rollback, and state reconstruction.

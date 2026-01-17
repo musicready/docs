@@ -1,88 +1,213 @@
 ---
-title: "MRS-S Spans, Directions, and Score Structure"
-description: "Spans with UUID references, directions, optional layout hints, and multi-movement structure."
+title: "MRS-S Spans, Directions & Structure"
+description: "Spans, directions, movements, and alternatives in MRS-S."
 ---
 
-See: [`/MRS-Specification-RFC#4-11-spans-section`](/MRS-Specification-RFC#4-11-spans-section) and [`/MRS-Specification-RFC#4-13-directions`](/MRS-Specification-RFC#4-13-directions)
+See: [`/MRS-Specification-RFC#4-mrs-s-the-canonical-storage-format`](/MRS-Specification-RFC#4-mrs-s-the-canonical-storage-format)
 
-## Spans
+## Spans Section
 
-Spans define relationships between events. All references use UUIDs:
+Spans define relationships between events across time. All endpoints use UUID references.
 
 ```clojure
 (spans
   (slur
-    :id #uuid "018c3f2c-9abc-def0-1234-567890abcdef"
-    :from #uuid "018c3f2a-1234-7890-abcd-ef1234567890"
-    :to #uuid "018c3f2b-5678-9012-cdef-0123456789ab"
-    :placement above)
-  
-  (tie
-    :id #uuid "018c3f2d-..."
-    :from #uuid "018c3f2e-..."
-    :to #uuid "018c3f2f-...")
+    :id #uuid "018c3f2c-0001-..."
+    :from #uuid "018c3f2a-0001-..."
+    :to #uuid "018c3f2a-0004-...")
   
   (hairpin
-    :id #uuid "018c3f39-..."
-    :from #uuid "018c3f3a-..."
-    :to #uuid "018c3f3b-..."
-    :type crescendo)
+    :id #uuid "018c3f2c-0002-..."
+    :type crescendo
+    :from #uuid "018c3f2a-0001-..."
+    :to #uuid "018c3f2a-0008-...")
   
   (beam
-    :id #uuid "018c3f30-..."
-    :events [#uuid "..." #uuid "..." #uuid "..." #uuid "..."]))
+    :id #uuid "018c3f2c-0003-..."
+    :events [#uuid "018c3f2a-0005-..." 
+             #uuid "018c3f2a-0006-..."
+             #uuid "018c3f2a-0007-..."]))
 ```
 
 ### Span Types
 
-| Type | Description |
-|------|-------------|
-| `slur` | Phrase marking |
-| `tie` | Connects identical pitches |
-| `beam` | Connects note flags |
-| `hairpin` | Dynamic wedge |
-| `ottava` | Octave transposition |
-| `pedal` | Piano pedal |
-| `gliss` | Glissando line |
-| `volta` | Ending bracket |
+| Type | Endpoint Style | Description |
+|------|----------------|-------------|
+| `slur` | from/to | Phrasing slur |
+| `tie` | from/to | Tie between same pitches |
+| `hairpin` | from/to | Crescendo/diminuendo |
+| `beam` | events list | Beam grouping |
+| `ottava` | from/to | Octave transposition |
+| `pedal` | from/to | Piano pedal |
+| `trill-span` | from/to | Extended trill line |
+| `gliss` | from/to | Glissando line |
+| `volta` | from/to | Ending bracket |
 
-## Cross-Boundary Spans
-
-Spans crossing envelope boundaries are marked:
+### Span Attributes
 
 ```clojure
 (slur
   :id #uuid "..."
   :from #uuid "..."
   :to #uuid "..."
-  :boundary-exit :to #uuid "...")  ; Endpoint outside envelope
+  :style legato)          ; Optional style
+
+(hairpin
+  :id #uuid "..."
+  :type crescendo         ; crescendo or diminuendo
+  :from #uuid "..."
+  :to #uuid "...")
+
+(beam
+  :id #uuid "..."
+  :events [#uuid "..." #uuid "..." #uuid "..."]
+  :feather accelerando)   ; Optional feathered beam
 ```
 
-Cross-boundary spans are write-protected at their boundary endpoints.
+### Span Immutability
+
+Once created, span endpoints (`:from`, `:to`, `:events`) are **immutable**. To change endpoints, delete the span and create a new one.
+
+### Boundary Markers
+
+For spans that cross Working Set boundaries:
+
+```clojure
+(slur
+  :id #uuid "..."
+  :from #uuid "..."        ; Inside scope
+  :to #uuid "..."          ; Outside scope
+  :boundary-exit true)     ; Marks endpoint outside
+```
+
+| Marker | Meaning |
+|--------|---------|
+| `:boundary-entry true` | Span starts outside, ends inside |
+| `:boundary-exit true` | Span starts inside, ends outside |
+
+Boundary-marked spans are **read-only** at their boundary endpoints.
 
 ## Directions
 
+Directions are measure-level or instrument-level instructions.
+
+### Measure-Level Directions
+
 ```clojure
-(measure :id #uuid "..." :number 45 :beat-start 487+1/4
-  
+(measure :id #uuid "..." :number 45
   (dir :type tempo :beat 0 :text "Più mosso" :tempo 132)
   (dir :type dynamic :beat 0 :text "ff" :scope all)
   (dir :type rehearsal :beat 0 :text "B")
+  (dir :type text :beat 2 :text "poco rit." :placement above)
   (dir :type segno :beat 0)
+  (dir :type coda :beat 0)
+  (dir :type fine :beat 0)
+  (dir :type dc :beat 0 :text "D.C. al Coda")
   
-  (violin-1
-    (dir :type text :beat 0 :text "sul G" :placement above)
-    ...))
+  (flute-1 ...))
 ```
 
-## Multi-Movement Structure
+### Instrument-Level Directions
+
+```clojure
+(measure :id #uuid "..." :number 45
+  (flute-1
+    (dir :type text :beat 0 :text "sul G" :placement above)
+    (v1 ...)))
+```
+
+### Direction Types
+
+| Type | Description |
+|------|-------------|
+| `tempo` | Tempo marking |
+| `dynamic` | Dynamic marking (score-wide) |
+| `rehearsal` | Rehearsal mark |
+| `text` | Text instruction |
+| `segno` | Segno sign |
+| `coda` | Coda sign |
+| `fine` | Fine marking |
+| `dc` | D.C. (da capo) |
+| `ds` | D.S. (dal segno) |
+
+## Movements
+
+Multi-movement works use the movements structure:
 
 ```clojure
 (movements
   (movement 1 :title "Allegro" :key C :mode major :time 4/4
     (measures
-      (measure :id #uuid "..." :number 1 ...) ...))
+      (measure :id #uuid "..." :number 1 ...) 
+      ...))
+  
   (movement 2 :title "Adagio" :key F :mode major :time 3/4
     (measures
-      (measure :id #uuid "..." :number 1 ...) ...)))
+      (measure :id #uuid "..." :number 1 ...) 
+      ...))
+  
+  (movement 3 :title "Finale" :key C :mode major :time 2/4
+    (measures
+      (measure :id #uuid "..." :number 1 ...) 
+      ...)))
 ```
+
+Measure numbers restart in each movement. UUIDs remain globally unique.
+
+## Alternatives (Ossia, Variants)
+
+```clojure
+(alternatives
+  (ossia
+    :measures [#uuid "..." #uuid "..."]
+    :instrument flute-1
+    :label "easier version"
+    :content
+      (measures
+        (measure :id #uuid "..." :number 123 ...)))
+  
+  (variant
+    :measures [#uuid "..."]
+    :label "manuscript variant"
+    :source "autograph ms."
+    :content ...))
+```
+
+### Alternative Types
+
+| Type | Purpose |
+|------|---------|
+| `ossia` | Alternative passage (usually easier) |
+| `variant` | Source variant (editorial) |
+| `editorial` | Editorial suggestion |
+
+## Layout Hints (Optional)
+
+Layout hints are NON-NORMATIVE suggestions for rendering:
+
+```clojure
+(layout
+  :bar-numbers (every 5)
+  :multi-rest-style consolidated
+  
+  (break :type system :after #uuid "018c3f40-0008-...")
+  (break :type page :after #uuid "018c3f40-0020-...")
+  
+  (hide-empty-staves true)
+  
+  (condense 
+    :instruments [flute-1 flute-2]
+    :measures [#uuid "..." #uuid "..."]
+    :label "Fl. 1, 2"))
+```
+
+### Layout Elements
+
+| Element | Description |
+|---------|-------------|
+| `break` | System or page break |
+| `hide-empty-staves` | Hide staves with rests |
+| `condense` | Combine instruments on one staff |
+| `spacing` | Measure spacing hints |
+
+Layout hints do not affect playback or semantic content.

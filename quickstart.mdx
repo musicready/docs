@@ -1,30 +1,49 @@
 ---
 title: "Quickstart"
-description: "Write a score in MRS-S and use Working Set Envelopes for context-aware agent editing."
+description: "Get started with MRS-S and MRS-Ops for AI-assisted composition."
 ---
 
-## MRS-S: The Single Format
+## Two Formats, One Model
 
-MRS uses **one syntax** for all operations. There is no separate "working format"—agents receive and return valid MRS-S.
+MRS uses two formats optimized for different purposes:
 
-See: [`/mrs-s/overview`](/mrs-s/overview) and [`/MRS-Specification-RFC#4-mrs-s-the-canonical-format`](/MRS-Specification-RFC#4-mrs-s-the-canonical-format)
+| Format | Purpose | Who Uses It |
+|--------|---------|-------------|
+| **MRS-S** | Storage, reading, archival | Orchestrator stores; agents read |
+| **MRS-Ops** | Mutations, writing | Agents write; orchestrator applies |
+
+Agents read MRS-S content in Working Set Envelopes. Agents write MRS-Ops operations. The orchestrator validates and applies operations to canonical state.
 
 ## File Types
 
-- **MIME type**: `application/vnd.mrs+sexpr`
-- **Extensions**: `.mrs` or `.mrs-s`
-- **Encoding**: UTF-8 (BOM should not be used)
+- **MRS-S**: `.mrs` or `.mrs-s` — `application/vnd.mrs+sexpr`
+- **MRS-Ops**: `.mrs-ops` — `application/vnd.mrs-ops+sexpr`
+- **Encoding**: UTF-8 (no BOM)
 
-See: [`/MRS-Specification-RFC#14-mime-types-and-file-extensions`](/MRS-Specification-RFC#14-mime-types-and-file-extensions)
+See: [`/MRS-Specification-RFC#16-mime-types-and-file-extensions`](/MRS-Specification-RFC#16-mime-types-and-file-extensions)
 
-## Minimal MRS-S Skeleton
+## Minimal MRS-S Score
 
 ```clojure
 (mrs-s 1.0
   (meta
     :title "Untitled")
-  (parts
-    (part violin-1 :name "Violin 1" :abbr "Vln. 1" :staves [treble]))
+  
+  (players
+    (player violin-player
+      :name "Violin"
+      :instruments [violin-1]
+      :default violin-1))
+  
+  (instruments
+    (instrument violin-1
+      :name "Violin"
+      :abbr "Vln."
+      :family strings
+      :staves [treble]
+      :transposition none
+      :range [G3 E7]))
+  
   (measures
     (measure 
       :id #uuid "018c3f40-0001-7890-abcd-ef1234567890"
@@ -33,22 +52,22 @@ See: [`/MRS-Specification-RFC#14-mime-types-and-file-extensions`](/MRS-Specifica
       :time 4/4
       (violin-1
         (v1
-          (: 0 C4.q :id #uuid "018c3f2a-0001-..." :at 0)
-          (: 1 D4.q :id #uuid "018c3f2a-0002-..." :at 1)
-          (: 2 E4.q :id #uuid "018c3f2a-0003-..." :at 2)
-          (: 3 F4.q :id #uuid "018c3f2a-0004-..." :at 3)))))
+          (: 0 C4.q :id #uuid "018c3f2a-0001-...")
+          (: 1 D4.q :id #uuid "018c3f2a-0002-...")
+          (: 2 E4.q :id #uuid "018c3f2a-0003-...")
+          (: 3 F4.q :id #uuid "018c3f2a-0004-...")))))
+  
   (spans))
 ```
 
 Key points:
 - Every measure has `:id` (UUID) and `:number` (display)
-- Every event has `:id` and `:at` (absolute position)
+- Every event has `:id` (UUID) — no `:at` required in storage (orchestrator computes it)
+- Players own instruments; instruments appear in measure content
 
-See: [`/MRS-Specification-RFC#4-2-document-structure`](/MRS-Specification-RFC#4-2-document-structure)
+## Working Set Envelope
 
-## Working Set Envelope for Agent Tasks
-
-For agent operations, the orchestrator extracts a **Working Set Envelope** with context:
+For agent tasks, the orchestrator extracts a Working Set Envelope:
 
 ```clojure
 (working-set
@@ -57,44 +76,122 @@ For agent operations, the orchestrator extracts a **Working Set Envelope** with 
   
   :scope
     (:measures #uuid "018c3f40-0001-..." #uuid "018c3f40-0008-...")
-    (:parts [violin-1 flute-1])
+    (:instruments [clarinet-bb])
   :display-hint (:measures 1 8)
   
-  :context "Add countermelody to flute"
+  :bundle orchestrate
+  :allowed-ops [create-event update-event delete-event create-span]
+  
+  :task "Add clarinet countermelody"
   
   :content
     (meta :time 4/4 :key C :mode minor :tempo 132)
-    (parts
-      (part violin-1 :name "Violin 1" :abbr "Vln. 1" :staves [treble])
-      (part flute-1 :name "Flute 1" :abbr "Fl. 1" :staves [treble]))
+    (instruments
+      (instrument clarinet-bb :name "Clarinet in Bb" :abbr "Cl." 
+                  :staves [treble] :transposition (down M2)))
     (measures
       (measure 
         :id #uuid "018c3f40-0001-..."
         :number 1
         :beat-start 0
-        (violin-1 (v1 (: 0 C4.q :id #uuid "..." :at 0) ...))
-        (flute-1 (v1))))  ; Empty — target for agent
+        (clarinet-bb (v1))))  ; Empty — target for agent
+    (spans)
   
-  :context-near
-    :reduction :melodic-skeleton
-    :content (measures ...)
+  :context-views
+    (context-view melodic-reference
+      :instruments [violin-1]
+      :content (measures ...))
+    (context-view harmonic-context
+      :content (harmony-events ...))
   
-  :synopsis-ref "sha256:...")
+  :structural-index-ref "sha256:...")
 ```
 
 Key features:
 - **Scope uses UUIDs** — not measure numbers
-- **`:display-hint`** provides human-readable numbers
-- **Context rings** provide surrounding material
-- **Synopsis reference** for global awareness
+- **`:bundle`** grants lane permissions
+- **`:context-views`** provide task-relevant information
+- **`:content`** is valid MRS-S the agent can read
 
-See: [`/working-set-envelope`](/working-set-envelope) and [`/MRS-Specification-RFC#5-working-set-envelope`](/MRS-Specification-RFC#5-working-set-envelope)
+## Agent Output: MRS-Ops
 
-## Agent Workflow (Extract → Edit → Replace)
+Agents write typed operations, not complete fragments:
 
-1. **Extract**: Create Working Set Envelope with UUID scope and context
-2. **Send to agent**: Agent receives valid MRS-S with context rings
-3. **Agent returns**: Valid MRS-S fragment for the modified scope
-4. **Replace**: Orchestrator does trivial substitution + validation
+```clojure
+(mrs-ops
+  :version 1.0
+  :scope-hash "sha256:..."
+  
+  :ops
+    ((create-event :tmp-id "e1" :measure #uuid "018c3f40-0001-..." 
+                   :instrument clarinet-bb :voice v1
+                   :beat 0 :pitch Eb4 :duration q :dyn mp)
+     (create-event :tmp-id "e2" :measure #uuid "018c3f40-0001-..."
+                   :instrument clarinet-bb :voice v1
+                   :beat 1 :pitch D4 :duration q)
+     (create-event :tmp-id "e3" :measure #uuid "018c3f40-0001-..."
+                   :instrument clarinet-bb :voice v1
+                   :beat 2 :pitch Eb4 :duration e)
+     (create-event :tmp-id "e4" :measure #uuid "018c3f40-0001-..."
+                   :instrument clarinet-bb :voice v1
+                   :beat 2+1/2 :pitch F4 :duration e)
+     (create-event :tmp-id "e5" :measure #uuid "018c3f40-0001-..."
+                   :instrument clarinet-bb :voice v1
+                   :beat 3 :pitch G4 :duration q)
+     
+     (create-span :tmp-id "s1" :type slur :from "e1" :to "e5")))
+```
 
-See: [`/extract-replace-protocol`](/extract-replace-protocol) and [`/MRS-Specification-RFC#9-extract-replace-protocol`](/MRS-Specification-RFC#9-extract-replace-protocol)
+Key features:
+- **Explicit operations**: `create-event`, not "here's the whole fragment"
+- **Temporary IDs**: `"e1"`, `"s1"` — orchestrator assigns UUIDs
+- **No derived fields**: No `:at` required — orchestrator computes it
+- **Spans reference tmp-ids**: `"e1"` in same envelope is valid
+
+## Orchestrator Response
+
+```clojure
+(mrs-ops-result
+  :status success
+  :id-mapping
+    (("e1" #uuid "019b2c3d-0001-...")
+     ("e2" #uuid "019b2c3d-0002-...")
+     ("e3" #uuid "019b2c3d-0003-...")
+     ("e4" #uuid "019b2c3d-0004-...")
+     ("e5" #uuid "019b2c3d-0005-...")
+     ("s1" #uuid "019b2c3d-0010-..."))
+  :applied 6
+  :revision "rev:def456")
+```
+
+## The Workflow
+
+```
+1. Orchestrator extracts Working Set Envelope
+   (MRS-S fragment + task-adaptive context + permissions)
+
+2. Agent reads MRS-S content and context views
+   
+3. Agent produces MRS-Ops (typed operations with tmp-ids)
+
+4. Orchestrator validates progressively:
+   - Syntax → References → Permissions → Musical Rules
+
+5. Orchestrator applies:
+   - Maps tmp-ids to UUIDs
+   - Computes derived fields
+   - Updates canonical state
+
+6. Orchestrator returns result (success or specific errors)
+```
+
+## Why This Works
+
+| Failure Mode | How MRS-Ops Eliminates It |
+|--------------|---------------------------|
+| Accidental deletion | Explicit delete-event required |
+| Calculation errors | Orchestrator computes :at |
+| Hallucinated IDs | Orchestrator validates all refs |
+| UUID collisions | Orchestrator mints all UUIDs |
+
+See: [`/MRS-Specification-RFC#5-mrs-ops-the-mutation-protocol`](/MRS-Specification-RFC#5-mrs-ops-the-mutation-protocol)

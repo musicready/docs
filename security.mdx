@@ -1,34 +1,98 @@
 ---
 title: "Security Considerations"
-description: "Input validation, denial-of-service considerations, and working-set redaction."
+description: "Security guidelines for MRS implementations."
 ---
 
-See: [`/MRS-Specification-RFC#15-security-considerations`](/MRS-Specification-RFC#15-security-considerations)
+See: [`/MRS-Specification-RFC#17-security-considerations`](/MRS-Specification-RFC#17-security-considerations)
 
 ## Input Validation
 
-Parsers MUST validate input before processing:
+Parsers MUST validate:
 
-- Maximum document size limits
-- Maximum nesting depth limits
-- Maximum event count per measure
-- Valid Unicode in strings
+| Limit | Recommended |
+|-------|-------------|
+| Maximum document size | 100 MB |
+| Maximum nesting depth | 100 levels |
+| Maximum events per measure | 10,000 |
+| Maximum spans | 100,000 |
+| Maximum measures | 100,000 |
 
 ## Denial of Service Protection
 
 Implementations SHOULD protect against:
 
-- Deeply nested structures (stack overflow)
-- Very large measure numbers (memory exhaustion)
-- Excessive span counts (O(n²) algorithms)
-- Malformed UTF-8 sequences
+- **Deeply nested structures**: Limit recursion depth
+- **Very large measure numbers**: Validate integer bounds
+- **Excessive span counts**: Limit span storage
+- **Malformed UTF-8**: Validate string encoding
+- **Circular references**: Detect reference cycles
 
 ## Information Disclosure
 
 Working Set Envelopes may expose:
 
-- Source document structure (via `:scope`)
-- Source document hash (for conflict detection)
-- Creator/modifier identity (via `:agent-id`)
+| Data | Risk |
+|------|------|
+| Source document hash | Reveals document identity |
+| Creator/modifier identity | Reveals authorship |
+| Agent names | Reveals workflow |
+| Transaction history | Reveals edit patterns |
 
-Implementations SHOULD allow redaction of sensitive metadata when sharing working sets externally.
+### Mitigation
+
+Implementations SHOULD:
+- Allow redaction of sensitive metadata
+- Support anonymous agent identifiers
+- Provide hash salting options
+- Enable audit log access controls
+
+## Operation Safety
+
+### UUID Validation
+
+Orchestrators MUST validate:
+- UUIDs are well-formed UUIDv7
+- Referenced UUIDs exist (or are valid tmp-ids)
+- No UUID collisions in minting
+
+### Scope Enforcement
+
+Orchestrators MUST enforce:
+- Operations within granted scope
+- Operations within granted lanes
+- No unauthorized measure access
+
+### Transaction Integrity
+
+Orchestrators MUST ensure:
+- Atomic application (all-or-nothing or explicit partial)
+- Rollback capability
+- Audit trail integrity
+
+## Agent Isolation
+
+When running untrusted agents:
+
+| Protection | Description |
+|------------|-------------|
+| Scope limiting | Grant minimal scope |
+| Lane restriction | Grant minimal lanes |
+| Operation filtering | Allow only needed op types |
+| Output validation | Validate all ops before apply |
+
+## Best Practices
+
+### For Orchestrator Implementers
+
+1. Validate all input before processing
+2. Enforce resource limits
+3. Log security-relevant events
+4. Support authentication/authorization
+5. Enable audit trail
+
+### For Agent Implementers
+
+1. Respect granted permissions
+2. Don't attempt out-of-scope access
+3. Handle rejection gracefully
+4. Don't store sensitive data unnecessarily

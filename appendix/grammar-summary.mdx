@@ -1,6 +1,6 @@
 ---
 title: "Appendix: Grammar Summary"
-description: "Key productions for MRS-S and Working Set Envelopes."
+description: "Key productions for MRS-S and MRS-Ops."
 ---
 
 See: [`/MRS-Specification-RFC#appendix-a-complete-grammar`](/MRS-Specification-RFC#appendix-a-complete-grammar)
@@ -8,23 +8,79 @@ See: [`/MRS-Specification-RFC#appendix-a-complete-grammar`](/MRS-Specification-R
 ## MRS-S Key Productions
 
 ```peg
-document  <- '(' 'mrs-s' version meta parts measures spans? overlays? layout? ')'
-measure   <- '(' 'measure' ':id' uuid ':number' INT measure-attrs* part-content* ')'
-event     <- '(' ':' beat pitch-expr ':id' uuid ':at' rational properties* ')'
-pitch     <- STEP ACCIDENTAL? OCTAVE '.' DURATION
-chord     <- '[' pitch+ ']' '.' DURATION
-span      <- '(' span-type ':id' uuid ':from' uuid ':to' uuid attributes* ')'
-uuid      <- '#uuid' '"' UUID-STRING '"'
+document     <- '(' 'mrs-s' version meta players instruments measures spans 
+                overlays? structural-index? alternatives? layout? ')'
+
+meta         <- '(' 'meta' metadata-fields ')'
+players      <- '(' 'players' player* ')'
+instruments  <- '(' 'instruments' instrument* ')'
+measures     <- '(' 'measures' measure* ')' | '(' 'movements' movement* ')'
+spans        <- '(' 'spans' span* ')'
+
+player       <- '(' 'player' identifier ':name' STRING ':instruments' '[' identifier* ']' 
+                ':default' identifier ')'
+instrument   <- '(' 'instrument' identifier instrument-attrs ')'
+
+measure      <- '(' 'measure' ':id' uuid ':number' INT measure-attrs* 
+                direction* instrument-content* ')'
+event        <- '(' ':' beat pitch-expr ':id' uuid properties* ')'
+
+pitch        <- STEP ACCIDENTAL? OCTAVE '.' DURATION DOTS?
+chord        <- '[' pitch+ ']' '.' DURATION DOTS?
+rest         <- 'r' '.' DURATION DOTS?
+
+span         <- '(' span-type ':id' uuid span-endpoints attributes* ')'
+
+uuid         <- '#uuid' '"' UUID-STRING '"'
+rational     <- INT (('+' INT '/' INT) | ('/' INT))?
+beat         <- rational
 ```
+
+Note: The `:at` field (absolute beat position) is a derived field computed by the orchestrator—it appears in stored MRS-S but is not provided in agent output.
+
+## MRS-Ops Key Productions
+
+```peg
+ops-envelope <- '(' 'mrs-ops' ':version' DECIMAL ':scope-hash' STRING 
+                ':ops' '(' operation* ')' ')'
+
+operation    <- create-event | update-event | delete-event |
+                create-span | update-span | delete-span |
+                create-measure | delete-measure |
+                instrument-change
+
+create-event <- '(' 'create-event' ':tmp-id' STRING 
+                ':measure' uuid ':instrument' identifier ':voice' voice-id
+                ':beat' rational ':pitch' pitch-expr ':duration' duration
+                properties* ')'
+
+update-event <- '(' 'update-event' ':id' uuid ':set' '(' set-pair* ')' ')'
+delete-event <- '(' 'delete-event' ':id' uuid ')'
+
+create-span  <- '(' 'create-span' ':tmp-id' STRING ':type' span-type 
+                ':from' ref ':to' ref attributes* ')'
+
+ref          <- uuid | STRING  ; UUID or tmp-id
+```
+
+Key differences between MRS-S and MRS-Ops:
+- MRS-S is complete and self-contained (storage format)
+- MRS-Ops uses temporary IDs (`:tmp-id`) mapped to UUIDs by the orchestrator
+- MRS-Ops omits derived fields (`:at`, `:beat-start`) computed by orchestrator
+- MRS-Ops references can use tmp-ids for newly-created objects
 
 ## Working Set Envelope Key Productions
 
 ```peg
-envelope  <- '(' 'working-set' version scope context? constraints? 
-             ':content' mrs-s-fragment context-rings* ')'
-response  <- '(' 'working-set-response' version scope 
-             ':content' mrs-s-fragment rationale? ')'
-scope     <- ':scope' '(' ':measures' uuid uuid ')' '(' ':parts' '[' part-id* ']' ')'
+envelope     <- '(' 'working-set' version scope task-context? constraints?
+                ':content' mrs-s-fragment context-views* ')'
+
+response     <- '(' 'mrs-ops' version ':scope-hash' STRING 
+                ':ops' '(' operation* ')' rationale? ')'
+
+scope        <- ':scope' '(' ':measures' uuid uuid ')' '(' ':instruments' '[' inst-id* ']' ')'
+task-context <- ':task-context' STRING
+context-view <- '(' 'context-view' ':type' view-type ':content' view-content ')'
 ```
 
-The `:content` of both envelope and response is valid MRS-S—no separate grammar required.
+Agents read Working Set Envelopes (MRS-S fragments with context views) and write MRS-Ops responses.

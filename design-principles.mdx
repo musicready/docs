@@ -1,48 +1,121 @@
 ---
 title: "Design Principles"
-description: "The core principles that shape MRS-S and the Working Set Envelope model."
+description: "Core design philosophy guiding MRS architecture decisions."
 ---
 
-This page summarizes the design principles stated in the RFC. For normative wording, see: [`/MRS-Specification-RFC#2-design-principles`](/MRS-Specification-RFC#2-design-principles).
+MRS is built on principles derived from the real requirements of AI-assisted composition at professional scale.
 
-## Explicit over implicit
+See: [`/MRS-Specification-RFC#2-design-principles`](/MRS-Specification-RFC#2-design-principles)
 
-- Musical position is **stated**, not inferred (beat positions are explicit).
-- Voice assignment is **declared**, not guessed.
+## Separation of Concerns: Storage vs Mutation
 
-Rationale: implicit state can cascade into large misalignments; explicit positions are independently verifiable.
+MRS uses different representations optimized for different purposes:
 
-## Stable identity over positional reference
+| Concern | Format | Optimized For |
+|---------|--------|---------------|
+| Storage, interchange, archival | MRS-S | Completeness, human readability, validation |
+| Agent output, mutations | MRS-Ops | Reliability, minimal surface, explicit intent |
 
-- Measures and events carry **stable UUIDv7 identifiers**.
-- Measure numbers are **display properties** for human navigation, not structural identity.
-- All internal references use **UUIDs**, not measure numbers.
+**Rationale**: Asking agents to emit complete, valid score fragments creates high failure rates from accidental omissions, calculation errors, and hallucinated references. Typed operations with orchestrator-derived fields eliminate entire error classes.
 
-Rationale: positional references break when content is inserted or deleted. UUID references survive structural changes, enabling fluid compositional workflows.
+```clojure
+;; Agent reads MRS-S (complete, human-auditable)
+(measure :id #uuid "..." :number 45
+  (clarinet-bb
+    (v1
+      (: 0 C5.q :id #uuid "...")
+      (: 1 D5.q :id #uuid "..."))))
 
-## Semantic over visual
+;; Agent writes MRS-Ops (typed, minimal)
+(create-event :tmp-id "e1" :measure #uuid "..." 
+              :instrument clarinet-bb :voice v1
+              :beat 2 :pitch E5 :duration q :dyn mf)
+```
 
-- Encode **meaning** (e.g., crescendo as start/end + type), not visual coordinates.
+## Orchestrator Authority
 
-Rationale: rendering is context-dependent; semantics remain stable across rendering contexts.
+The orchestrator is the sole authority for:
+- **UUID minting**: Agents use temporary IDs; orchestrator assigns final UUIDs
+- **Derived field computation**: Orchestrator computes `:at`, `:beat-start`, etc.
+- **Canonical state management**: Single source of truth
+- **Validation and application**: Progressive validation before state mutation
 
-## Predictable over clever
+**Rationale**: Centralized authority eliminates coordination failures. Agents cannot create invalid references or miscalculate derived fields because they don't manage those concerns.
 
-- Prefer **regular patterns** to reduce generation and editing errors.
+## Stable Identity Over Positional Reference
 
-Rationale: consistent syntax improves reliability (especially for machine generation).
+Every measure, event, and span carries a stable UUIDv7 identifier. Measure numbers are display properties for human navigation, not structural identity.
 
-## Context over isolation
+```clojure
+(measure 
+  :id #uuid "018c3f40-1234-7890-abcd-ef1234567890"  ; Stable—survives edits
+  :number 45                                         ; Display only—can change
+  :beat-start 487
+  ...)
+```
 
-- Working Sets include **graduated context rings**—surrounding material at reduced detail.
-- Agents have **synopsis access** for global structural awareness.
+**Rationale**: Positional references break when content is inserted or deleted. UUID references survive structural changes, enabling fluid compositional workflows where form evolves during the creative process.
 
-Rationale: musical decisions are contextual. A countermelody responds to what precedes and follows. Phrase boundaries, harmonic rhythm, and thematic relationships inform compositional choices.
+## Progressive Validation
 
-## One format, scoped extraction
+Operations are validated in stages before application:
 
-- MRS uses a **single syntax** (MRS-S) for all operations.
-- Working Set Envelopes extract **bounded fragments** with scope metadata and context.
-- Agents receive MRS-S and return MRS-S—no format conversion.
+```
+Syntax → References → Permissions → Musical Rules → Application
+```
 
-Rationale: maintaining two syntaxes creates parsing complexity, abbreviation ambiguity, and merge conflicts. A single syntax means extraction and replacement are trivial operations.
+**Rationale**: Errors caught before state mutation enable specific feedback, partial acceptance, and no silent corruption. This is fundamentally different from "emit fragment, hope it validates."
+
+## Task-Adaptive Context
+
+Agents receive context views tailored to their specific task, not fixed "near/far" rings.
+
+| Task Type | Context Views |
+|-----------|---------------|
+| Countermelody | Melodic reference, harmonic context |
+| Orchestration | Orchestration map, texture density |
+| Dynamics pass | Phrase structure, dynamics profile |
+
+**Rationale**: Fixed rings may include irrelevant content and omit critical content. A countermelody task needs the melody it responds to, not "nearby measures at melodic-skeleton reduction."
+
+## Professional Orchestration Semantics
+
+The Player → Instrument → Staff model supports real-world orchestration:
+
+```clojure
+(player woodwind-2
+  :name "Flute 2 / Piccolo"
+  :instruments [flute-2 piccolo]
+  :default flute-2)
+```
+
+**Rationale**: Arrangers and orchestrators work with players and instrument changes constantly. Flute 2 doubling piccolo is not an edge case—it's standard practice. The model must reflect professional reality.
+
+## Explicit Over Implicit
+
+Every musical element has an explicit representation. Position in the measure is stated, not inferred from accumulated durations. Voice assignment is declared, not guessed from stem direction.
+
+**Rationale**: Implicit state creates cascading errors. If an LLM miscounts one duration, all subsequent events are misaligned. Explicit positions are independently verifiable.
+
+## Semantic Over Visual
+
+MRS encodes musical meaning, not visual appearance. A crescendo is marked with start/end points and type, not with specific hairpin coordinates.
+
+**Rationale**: Visual rendering is context-dependent (page size, staff spacing, font). Semantic encoding remains valid across all rendering contexts.
+
+## Predictable Over Clever
+
+The format uses regular patterns even when more compact alternatives exist. Every note uses the same syntax regardless of context.
+
+**Rationale**: LLMs generate more reliably when patterns are consistent. A 10% size reduction is not worth a 50% increase in generation errors.
+
+## Canonical Rational Syntax
+
+All temporal positions use exact rationals in a single canonical form:
+
+```
+Permitted:   0, 1, 2+1/2, 0+1/3, 3+3/4
+Forbidden:   2.5, 0.333, 1.75  (decimal literals)
+```
+
+**Rationale**: Decimal literals invite floating-point parsing and normalization ambiguity. One canonical form eliminates entire error classes.

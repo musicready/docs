@@ -3,24 +3,32 @@ title: "Appendix: Glossary"
 description: "Canonical definitions used throughout the specification."
 ---
 
-See: [`/MRS-Specification-RFC#appendix-d-glossary`](/MRS-Specification-RFC#appendix-d-glossary)
+See: [`/MRS-Specification-RFC#appendix-c-glossary`](/MRS-Specification-RFC#appendix-c-glossary)
 
 | Term | Definition |
 |------|------------|
-| **Agent** | An AI system that operates on MRS documents |
-| **Beat** | A metrical position within a measure (0-indexed) |
+| **Agent** | An AI system that reads MRS-S fragments and writes MRS-Ops |
+| **Beat** | A metrical position within a measure (0-indexed, rational) |
 | **Chord** | Multiple simultaneous pitches with shared duration |
-| **Context Ring** | Surrounding material at reduced detail level (read-only) |
+| **Context View** | Task-adaptive information beyond the edit scope (read-only) |
+| **Derived Field** | A field computed by the orchestrator (`:at`, `:beat-start`, `:sec-start`) |
 | **Event** | An atomic musical occurrence at a specific beat, identified by UUID |
 | **Extraction** | Creating a Working Set Envelope from a source MRS-S |
+| **Instrument** | A specific sound source with fixed transposition and range |
+| **Lane** | A permission boundary for a category of content |
+| **Lane Bundle** | A predefined set of lanes for common workflows |
 | **Measure** | A metrical unit bounded by barlines, identified by UUID |
-| **MRS-S** | The canonical MRS format (S-expression based) |
-| **Orchestrator** | System that coordinates agent tasks and manages the full score |
+| **MRS-Ops** | The typed operation protocol for agent mutations |
+| **MRS-S** | The canonical storage format (S-expression based) |
+| **Orchestrator** | System that owns canonical state, mints UUIDs, computes derived fields, validates and applies operations |
 | **Overlay** | Analytical metadata attached to score regions |
-| **Part** | A single instrument or voice throughout a score |
-| **Replacement** | Substituting extracted scope with agent's response |
-| **Scope** | The UUID-based boundaries of a Working Set |
-| **Scope Negotiation** | Protocol for agents to request scope adjustments |
-| **Span** | A relation connecting multiple events (slur, tie, etc.) |
-| **Synopsis** | A compressed structural view of the full score (read-only) |
-| **Working Set Envelope** | A scoped MRS-S fragment with context for agent tasks |
+| **Player** | A performer who may play multiple instruments |
+| **Progressive Validation** | Multi-stage validation before state mutation |
+| **Replacement** | Applying validated MRS-Ops operations to canonical state |
+| **Scope** | UUID-based boundaries of a Working Set |
+| **Span** | A relation connecting multiple events (slur, tie, beam, etc.) |
+| **Staff** | A visual grouping of five lines; instruments may have multiple staves |
+| **Structural Index** | A compressed global view of the full score (read-only) |
+| **Temporary ID** | Agent-assigned identifier mapped to UUID by orchestrator |
+| **Voice** | An independent melodic/rhythmic stream within a staff |
+| **Working Set Envelope** | A scoped MRS-S fragment with task-adaptive context for agent tasks |

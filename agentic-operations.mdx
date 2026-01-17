@@ -1,261 +1,316 @@
 ---
 title: "Agent Operations"
-description: "Context-aware agent workflows using Working Set Envelopes, edit lanes, and the single-writer orchestrator pattern."
+description: "The MRS-Ops protocol for reliable agent mutations with typed operations."
 ---
 
-MRS defines a protocol for agentic operations (AI-assisted composition/editing) centered on Working Set Envelopes with context rings, edit lanes, and a single-writer orchestrator.
+MRS defines a protocol for agent operations centered on **typed operations** (MRS-Ops), **task-adaptive context**, and **progressive validation**.
 
-**Core Principle**: Agents receive valid MRS-S fragments with appropriate context and return valid MRS-S fragments. There is no separate syntax for agent I/O.
+**Core Principle**: Agents read MRS-S fragments with task-appropriate context. Agents write typed MRS-Ops operations. The orchestrator validates and applies.
 
-See: [`/MRS-Specification-RFC#10-agent-operations`](/MRS-Specification-RFC#10-agent-operations)
+See: [`/MRS-Specification-RFC#5-mrs-ops-the-mutation-protocol`](/MRS-Specification-RFC#5-mrs-ops-the-mutation-protocol)
 
-## The Orchestrator Pattern
+## Why Typed Operations?
 
-The orchestrator is the central coordinator that makes AI-driven composition safe and reliable. It owns the canonical score state and mediates all agent operations.
+Asking agents to emit complete MRS-S fragments creates failure modes:
+- **Accidental omission**: Agent returns less content → content silently deleted
+- **Calculation errors**: Miscomputed `:at` values, duration sums
+- **Hallucinated references**: IDs that don't exist
+- **UUID management**: Agent must generate valid, non-colliding UUIDs
 
-```
-         ORCHESTRATOR (owns canonical MRS-S state)
-                │
-    ┌───────────┼───────────┬───────────┐
-    ▼           ▼           ▼           ▼
- Harmony    Melody      Orch.      Expression
-  Agent      Agent      Agent        Agent
-    │           │           │           │
-    └───────────┴───────────┴───────────┘
-                │
-         Working Set Envelopes
-         (scoped MRS-S + edit lanes)
-```
+MRS-Ops eliminates these by design:
+- **Explicit operations**: Create, update, delete are distinct (no omission risk)
+- **Orchestrator-derived fields**: Agent provides beat; orchestrator computes `:at`
+- **Temporary IDs**: Agent uses tmp-ids; orchestrator assigns UUIDs
+- **Minimal surface**: Only changed content in output
 
-**Key insight**: Multiple agents can work in parallel, but **only the orchestrator commits** changes to the canonical score. This gives you multi-agent power without multi-writer chaos.
-
-For full orchestrator semantics, see: [Orchestrator Contract](/orchestrator-contract)
-
-## Edit Lanes
-
-Edit lanes are capability boundaries that determine what an agent may modify. They enable safe parallel work: agents with disjoint lanes can edit the same measures without conflict.
-
-### v1 Lane Set
-
-| Lane | Owns |
-|------|------|
-| `structure` | Measure list, sections, repeats, movements |
-| `temporal` | Tempo map, time signatures |
-| `harmonyPlan` | Chord symbols, harmonic rhythm, key areas |
-| `notes` | Pitches, durations, rests, voice assignment |
-| `expression` | Dynamics, hairpins, slurs, expressive text |
-| `technique` | Articulations, playing techniques |
-| `lyricsText` | Lyrics, syllables, underlay |
-
-### Lane-Based Scope Grants
-
-Working Set Envelopes include explicit lane permissions:
+## MRS-Ops Envelope
 
 ```clojure
-(working-set
-  :scope
-    (:measures #uuid "..." #uuid "...")
-    (:parts [clarinet-1])
+(mrs-ops
+  :version 1.0
+  :scope-hash "sha256:a3f2c1b9e4d7..."
+  :base-revision "rev:abc123"
   
-  :lanes [notes expression]           ; What the agent may modify
-  :allowed-ops [upsert-event delete-event upsert-span]
-  
-  :locks
-    ((structure :scope :all)          ; Form is locked (read-only)
-     (harmonyPlan :scope :all))       ; Harmony is locked (read-only)
-  
-  :content ...)
+  :ops
+    (<operation>
+     <operation>
+     ...))
 ```
 
-If an agent returns changes outside its granted lanes, the orchestrator rejects them.
+| Field | Required | Description |
+|-------|----------|-------------|
+| `:version` | YES | Protocol version |
+| `:scope-hash` | YES | Hash of source Working Set (conflict detection) |
+| `:base-revision` | NO | Revision ID of source state |
+| `:ops` | YES | List of operations |
 
-## Task Definition
+## Operation Types
 
-```
-Task {
-  id: TaskId
-  type: TaskType
-  instruction: String              ; Natural language instruction
-  working_set: WorkingSetEnvelope  ; Scoped MRS-S with context + lanes
-  synopsis: Synopsis?              ; Structural overview
-  context: Map<String, Value>      ; Additional context
-}
-
-TaskType {
-  compose      ; Create new content
-  arrange      ; Adapt existing content
-  harmonize    ; Add harmony to melody
-  orchestrate  ; Assign to instruments
-  analyze      ; Extract information
-  correct      ; Fix errors
-  transform    ; Apply transformation
-  extend       ; Continue existing material
-}
-```
-
-See: [`/MRS-Specification-RFC#10-2-task-definition`](/MRS-Specification-RFC#10-agent-operations)
-
-## Sequential Workflow Model
-
-Composition proceeds through sequential agent operations. Form and structure emerge through the creative process:
-
-```
-1. Initial sketch (melody agent)
-   → orchestrator replaces
-   
-2. Harmonic elaboration (harmony agent)
-   → orchestrator replaces
-   
-3. Structural extension (form agent)
-   → may insert measures
-   → orchestrator handles UUID assignment
-   
-4. Orchestration (orchestration agent)
-   → orchestrator replaces
-   
-5. Expression pass (dynamics agent)
-   → orchestrator merges (disjoint lane)
-   
-6. Refinement passes...
-```
-
-Each agent:
-- Receives current state in Working Set Envelope
-- Has context rings for surrounding material
-- Has synopsis access for global awareness
-- Has explicit lane permissions
-- Returns valid MRS-S fragment
-- May request scope expansion via negotiation
-
-## Layered Merges
-
-When multiple agents edit the same region with **disjoint lanes**, the orchestrator can merge both:
-
-```
-Agent A: notes lane      →  (violin-1 (v1 (: 0 G5.q ...)))
-Agent B: expression lane →  (hairpin :from #uuid "..." :to #uuid "..." :type crescendo)
-
-Orchestrator: merges both into the same measures (no conflict)
-```
-
-### Merge Rules
-
-- **Disjoint lanes**: Auto-merge allowed
-- **Same lane, different objects**: Usually auto-merge
-- **Same lane, same object**: Conflict → reject or human review
-
-See: [Orchestrator Contract - Layered Merge Policy](/orchestrator-contract#layered-merge-policy)
-
-## Context-Aware Operations
-
-Agents operate with full context:
+### Create Event
 
 ```clojure
-(working-set
-  :scope (:measures #uuid "..." #uuid "...") (:parts [clarinet-1])
-  :display-hint (:measures 45 52)
-  :lanes [notes]
-  
-  :content (measures ...)           ; Full detail, writable
-  
-  :context-near
-    :reduction :melodic-skeleton
-    :content (measures ...)         ; Reduced detail, read-only
-  
-  :context-far
-    :reduction :harmonic-rhythm
-    :content (measures ...)         ; Further reduced, read-only
-  
-  :synopsis-ref "sha256:...")
+(create-event
+  :tmp-id "e1"
+  :measure #uuid "018c3f40-002d-..."
+  :instrument clarinet-bb
+  :voice v1
+  :beat 0
+  :pitch Eb4
+  :duration q
+  :dyn mp
+  :art staccato)
 ```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `:tmp-id` | YES | Temporary ID (orchestrator maps to UUID) |
+| `:measure` | YES | Target measure UUID |
+| `:instrument` | YES | Target instrument ID |
+| `:voice` | YES | Target voice |
+| `:beat` | YES | Beat position (rational, e.g., `0`, `2+1/2`) |
+| `:pitch` | YES | Pitch or chord or `r` for rest |
+| `:duration` | YES | Duration code (`q`, `h`, `e`, etc.) |
+| Other properties | NO | `:dyn`, `:art`, `:orn`, `:tech`, etc. |
+
+### Update Event
+
+```clojure
+(update-event
+  :id #uuid "018c3f2a-0001-..."
+  :set
+    ((:pitch D5)
+     (:dyn f)))
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `:id` | YES | Existing event UUID |
+| `:set` | YES | List of (field value) pairs to update |
+
+### Delete Event
+
+```clojure
+(delete-event
+  :id #uuid "018c3f2a-0001-...")
+```
+
+### Create Span
+
+```clojure
+(create-span
+  :tmp-id "s1"
+  :type slur
+  :from "e1"        ; Can reference tmp-id or UUID
+  :to "e5")
+```
+
+Span endpoints can reference:
+- Existing UUIDs: `#uuid "018c3f2a-..."`
+- Temporary IDs from same operation set: `"e1"`
+
+### Update Span
+
+```clojure
+(update-span
+  :id #uuid "018c3f2c-0001-..."
+  :set
+    ((:style legato)))
+```
+
+**Note**: Span endpoints (`:from`, `:to`, `:events`) are immutable. To change endpoints, delete and recreate the span.
+
+### Delete Span
+
+```clojure
+(delete-span
+  :id #uuid "018c3f2c-0001-...")
+```
+
+### Create Measure
+
+```clojure
+(create-measure
+  :tmp-id "m1"
+  :after #uuid "018c3f40-0030-..."
+  :time 4/4
+  :key C :mode minor)
+```
+
+The orchestrator assigns UUID, `:number`, and computes `:beat-start`.
+
+### Delete Measure
+
+```clojure
+(delete-measure
+  :id #uuid "018c3f40-0030-...")
+```
+
+**Warning**: Deleting a measure deletes all events within it.
+
+### Instrument Change
+
+```clojure
+(instrument-change
+  :tmp-id "ic1"
+  :player woodwind-2
+  :measure #uuid "018c3f40-0045-..."
+  :beat 0
+  :to piccolo)
+```
+
+## Temporary ID Rules
+
+1. Tmp-ids MUST be strings starting with a letter: `"e1"`, `"span-a"`, `"m1"`
+2. Tmp-ids are scoped to a single MRS-Ops envelope
+3. Operations MAY reference each other's tmp-ids within same envelope
+4. Orchestrator maps all tmp-ids to UUIDs before application
+5. Response includes the tmp-id → UUID mapping
+
+## Task-Adaptive Context Views
+
+Context views provide task-relevant information beyond the edit scope. Unlike fixed rings, views are selected for the specific task.
+
+### Melodic Reference
+
+```clojure
+(context-view melodic-reference
+  :instruments [violin-1]
+  :measures #uuid "..." #uuid "..."
+  :content
+    (measures
+      (measure :id #uuid "..." :number 45
+        (violin-1
+          (v1
+            (: 0 G5.q :id #uuid "...")
+            ...)))))
+```
+
+### Harmonic Context
+
+```clojure
+(context-view harmonic-context
+  :content
+    (harmony-events
+      (chord :measure #uuid "..." :beat 0 :symbol Cm :function i)
+      (chord :measure #uuid "..." :beat 2 :symbol Fm :function iv)))
+```
+
+### Orchestration Map
+
+```clojure
+(context-view orchestration-map
+  :content
+    (texture-regions
+      (region :measures [#uuid "..." #uuid "..."]
+              :active [violin-1 violin-2 viola cello]
+              :density medium
+              :character "lyrical strings")))
+```
+
+### Phrase Structure
+
+```clojure
+(context-view phrase-structure
+  :content
+    (phrases
+      (phrase :start #uuid "..." :end #uuid "..." :type antecedent)
+      (phrase :start #uuid "..." :end #uuid "..." :type consequent)))
+```
+
+### View Selection by Task Type
+
+| Task Type | Typical Context Views |
+|-----------|----------------------|
+| Compose | phrase-structure, harmonic-context, thematic-references |
+| Countermelody | melodic-reference, harmonic-context |
+| Orchestrate | orchestration-map, dynamics-profile |
+| Harmonize | melodic-reference, phrase-structure |
+| Dynamics | phrase-structure, dynamics-profile |
+
+## Example: Add Countermelody
+
+**Working Set Envelope** (agent receives):
+```clojure
+(working-set
+  :version 1.0
+  :source-hash "sha256:..."
+  :scope (:measures #uuid "..." #uuid "...") (:instruments [clarinet-bb])
+  :bundle orchestrate
+  :task "Add countermelody responding to violin"
+  :content (measures ...)
+  :context-views
+    (context-view melodic-reference :instruments [violin-1] :content ...)
+    (context-view harmonic-context :content ...))
+```
+
+**Agent Response** (MRS-Ops):
+```clojure
+(mrs-ops
+  :version 1.0
+  :scope-hash "sha256:..."
+  :ops
+    ((create-event :tmp-id "e1" :measure #uuid "..." 
+                   :instrument clarinet-bb :voice v1
+                   :beat 0 :pitch Eb4 :duration q :dyn mp)
+     (create-event :tmp-id "e2" :measure #uuid "..."
+                   :instrument clarinet-bb :voice v1
+                   :beat 1 :pitch D4 :duration q)
+     (create-event :tmp-id "e3" :measure #uuid "..."
+                   :instrument clarinet-bb :voice v1
+                   :beat 2 :pitch Eb4 :duration e)
+     (create-event :tmp-id "e4" :measure #uuid "..."
+                   :instrument clarinet-bb :voice v1
+                   :beat 2+1/2 :pitch F4 :duration e)
+     (create-event :tmp-id "e5" :measure #uuid "..."
+                   :instrument clarinet-bb :voice v1
+                   :beat 3 :pitch G4 :duration q)
+     
+     (create-span :tmp-id "s1" :type slur :from "e1" :to "e5")))
+```
+
+**Orchestrator Response**:
+```clojure
+(mrs-ops-result
+  :status success
+  :id-mapping
+    (("e1" #uuid "019b2c3d-0001-...")
+     ("e2" #uuid "019b2c3d-0002-...")
+     ("e3" #uuid "019b2c3d-0003-...")
+     ("e4" #uuid "019b2c3d-0004-...")
+     ("e5" #uuid "019b2c3d-0005-...")
+     ("s1" #uuid "019b2c3d-0010-..."))
+  :applied 6
+  :revision "rev:def456")
+```
+
+## Lane Bundles
+
+Lane bundles grant permissions for common workflows:
+
+| Bundle | Lanes | Use Case |
+|--------|-------|----------|
+| `orchestrate` | notes, expression, technique | Full orchestration |
+| `dynamics-pass` | expression | Dynamics only |
+| `notation-cleanup` | notes, technique | Fix notation |
+| `full-compose` | all creative lanes | Full control |
 
 ## Constraint Language
 
-Constraints specify rules generated content must satisfy:
-
-- **Range constraints**: Notes must fall within instrument range
-- **Avoidance constraints**: No parallel fifths, no voice crossing
-- **Preference constraints**: Chord tones on downbeats, stepwise motion
-
 ```clojure
 :constraints
-  ((range clarinet-1 E3 G6)
+  ((range clarinet-bb E3 C7)
    (avoid parallel-fifths violin-1)
-   (prefer chord-tones downbeats))
+   (prefer chord-tones downbeats)
+   (max-interval P8)
+   (note-density 2 8))
 ```
 
-See: [`/MRS-Specification-RFC#10-4-constraint-language`](/MRS-Specification-RFC#10-agent-operations)
+| Constraint | Description |
+|------------|-------------|
+| `range` | Notes within instrument range |
+| `avoid` | Prevent voice-leading errors |
+| `prefer` | Style preferences |
+| `max-interval` | Maximum melodic leap |
+| `note-density` | Notes per measure |
 
-## Scope Negotiation
-
-Agents can request scope adjustments:
-
-```clojure
-(scope-request
-  :reason "Phrase extends beyond current boundary"
-  :current (:measures #uuid "..." #uuid "...")
-  :requested (:measures #uuid "..." #uuid "...")
-  :justification "Slur endpoint at measure boundary")
-```
-
-The orchestrator can grant, deny, or offer alternatives.
-
-## Human Review Gates
-
-Certain operations trigger human review:
-
-| Operation | Reason |
-|-----------|--------|
-| Structure changes | Form is foundational |
-| Temporal changes | Affects all timing |
-| Span repairs | Cross-boundary safety |
-| Conflicts | Cannot auto-resolve |
-
-Human approval is recorded in the change-set:
-
-```clojure
-(human-review
-  :changeset-id #uuid "..."
-  :status :approved
-  :reviewer "composer"
-  :notes "Approved with minor adjustment to hairpin")
-```
-
-## Checkpoints
-
-Lock approved decisions to prevent regression:
-
-```clojure
-(checkpoint
-  :id "harmony-approved"
-  :locks
-    ((structure :scope :all)
-     (harmonyPlan :scope :all)))
-```
-
-After this checkpoint, agents cannot modify form or harmony—only orchestration, expression, and other unlocked lanes.
-
-See: [Orchestrator Contract - Checkpoints and Locks](/orchestrator-contract#checkpoints-and-locks)
-
-## Working with Draft States
-
-Agents can create and resolve placeholders:
-
-```clojure
-;; Agent creates placeholder for future work
-(placeholder
-  :parts [violin-1 violin-2 viola cello]
-  :intent :accompaniment
-  :description "Strings accompany flute melody")
-
-;; Later agent resolves placeholder with actual content
-(working-set-response
-  :content
-    (measures
-      (measure :id #uuid "..."
-        (violin-1 (v1 (: 0 G4.h ...)))
-        (violin-2 (v1 (: 0 D4.h ...)))
-        ...)))
-```
-
-See: [Draft States](/draft-states)
+Constraint violations are caught in progressive validation.

@@ -1,298 +1,225 @@
 ---
 title: "Working Set Envelope"
-description: "A scoped MRS-S fragment with context rings and edit lane permissions for bounded agent operations on full-scale scores."
+description: "Scoped MRS-S extraction with task-adaptive context for agent operations."
 ---
 
-The Working Set Envelope is the core mechanism for enabling context-aware agent workflows. It wraps a bounded MRS-S fragment with scope metadata, context rings, **edit lane permissions**, and synopsis access.
+A Working Set Envelope wraps a bounded MRS-S fragment with task-adaptive context for focused agent operations.
 
-See: [`/MRS-Specification-RFC#5-working-set-envelope`](/MRS-Specification-RFC#5-working-set-envelope)
+See: [`/MRS-Specification-RFC#7-working-set-envelope`](/MRS-Specification-RFC#7-working-set-envelope)
 
-## Key Principles
+## Design Principles
 
-- **Agents receive valid MRS-S and return valid MRS-S**—no separate syntax
-- **Scopes use UUIDs**—not measure numbers—for structural stability
-- **Edit lanes define what can be modified**—disjoint lanes enable parallel work
-- **Context rings** provide surrounding material at reduced detail
-- **Scope negotiation** enables flexible conversational workflows
+- **Agents read MRS-S** — complete, human-auditable score fragments
+- **Scopes use UUIDs** — not measure numbers — for structural stability
+- **Task-adaptive context** — views tailored to the specific task, not fixed rings
+- **Permissions via bundles** — lane bundles grant appropriate modification rights
 
-## Structure
+## Envelope Structure
 
 ```clojure
 (working-set
   :version 1.0
-  :source-hash "sha256:..."
-  
-  ;; === SCOPE: WHERE the agent may edit ===
-  :scope
-    (:measures #uuid "018c3f40-002d-..." #uuid "018c3f40-0034-...")
-    (:parts [clarinet-1])
-    (:voices [v1])  ; optional refinement
-  :display-hint (:measures 45 52)  ; Informational only
-  
-  ;; === LANES: WHAT the agent may modify ===
-  :lanes [notes expression]
-  :allowed-ops [upsert-event delete-event upsert-span delete-span]
-  
-  ;; === LOCKS: What is read-only ===
-  :locks
-    ((structure :scope :all)           ; Form is locked
-     (temporal :scope :all)            ; Tempo map is locked
-     (harmonyPlan :measures #uuid "..." #uuid "..."))  ; Harmony locked for this section
-  
-  ;; === PRECONDITIONS: For conflict detection ===
-  :base-revision "rev:abc123"
-  :preconditions
-    ((measure #uuid "018c3f40-002d-..." :hash "sha256:...")
-     (measure #uuid "018c3f40-002e-..." :hash "sha256:..."))
-  
-  ;; === CONTEXT ===
-  :context "Add countermelody to clarinet, following harmonic rhythm"
-  
-  :constraints
-    ((range clarinet-1 E3 G6)
-     (avoid parallel-fifths violin-1))
-  
-  ;; === CONTENT: Full-detail MRS-S (writable) ===
-  :content
-    (meta :time 4/4 :key C :mode minor)
-    (parts ...)
-    (measures ...)
-    (spans ...)
-  
-  ;; === CONTEXT RINGS: Surrounding material (read-only) ===
-  :context-near
-    (:measures #uuid "..." #uuid "...")
-    :reduction :melodic-skeleton
-    :content (measures ...)
-  
-  :context-far
-    (:measures #uuid "..." #uuid "...")
-    :reduction :harmonic-rhythm
-    :content (measures ...)
-  
-  :synopsis-ref "sha256:...")
-```
-
-## Scope Grant Schema
-
-The scope grant is the intersection of **(where)** × **(what)** × **(how)**:
-
-### WHERE: Region Targeting
-
-```clojure
-:scope
-  (:measures #uuid "018c3f40-002d-..." #uuid "018c3f40-0034-...")
-  (:parts [clarinet-1 clarinet-2])
-  (:voices [v1])  ; optional
-:display-hint (:measures 45 52)  ; Human-readable, never used structurally
-```
-
-- **Measures by UUID range** (inclusive)
-- **Parts by ID** (explicit list)
-- **Voices** (optional refinement)
-- Display hints are informational only—never used for structural reference
-
-### WHAT: Lane Permissions
-
-```clojure
-:lanes [notes expression]
-```
-
-Agents may only modify objects owned by their granted lanes:
-
-| Lane | Owns |
-|------|------|
-| `structure` | Measure list, sections, repeats |
-| `temporal` | Tempo map, time signatures |
-| `harmonyPlan` | Chord symbols, harmonic rhythm |
-| `notes` | Pitches, durations, rests, voices |
-| `expression` | Dynamics, hairpins, slurs |
-| `technique` | Articulations, playing techniques |
-| `lyricsText` | Lyrics, syllables, underlay |
-
-### HOW: Allowed Operations
-
-```clojure
-:allowed-ops [upsert-event delete-event upsert-span delete-span]
-```
-
-| Operation | Description |
-|-----------|-------------|
-| `upsert-event` | Create or update event by `:id` |
-| `delete-event` | Remove event by `:id` |
-| `upsert-span` | Create or update span by `:id` |
-| `delete-span` | Remove span by `:id` |
-| `set-attr` | Modify specific field (within lane) |
-
-Structure operations (`insert-measures`, `delete-measures`) require explicit grant and typically trigger human review.
-
-### Locks: Read-Only Constraints
-
-```clojure
-:locks
-  ((structure :scope :all)
-   (temporal :scope :all)
-   (harmonyPlan :measures #uuid "..." #uuid "..."))
-```
-
-Locked lanes/regions are visible but not modifiable. Agents can read locked content for context.
-
-## UUID-Based Scoping
-
-All scope references use stable UUIDs:
-
-```clojure
-:scope
-  (:measures #uuid "018c3f40-002d-..." #uuid "018c3f40-0034-...")
-  (:parts [clarinet-1])
-:display-hint (:measures 45 52)  ; Human-readable, never used structurally
-```
-
-Measure numbers appear ONLY in `:display-hint`—never for structural reference.
-
-## Context Rings
-
-Context rings provide surrounding material at graduated detail levels:
-
-| Level | Content |
-|-------|---------|
-| `:full` | Everything (no reduction) |
-| `:melodic-skeleton` | Downbeats, phrase boundaries, structural tones |
-| `:harmonic-rhythm` | Chord roots, key changes, bass line |
-| `:structural` | Rehearsal marks, tempo changes, texture shifts only |
-
-All context ring content is **read-only**. Agents can read it but cannot modify it.
-
-```clojure
-:context-near
-  (:measures #uuid "..." #uuid "...")
-  :display-hint (:measures 41 44)
-  :reduction :melodic-skeleton
-  :content (measures ...)
-
-:context-far
-  (:measures #uuid "..." #uuid "...")
-  :display-hint (:measures 1 40)
-  :reduction :harmonic-rhythm
-  :content (measures ...)
-```
-
-## Agent Response
-
-Agents return a `working-set-response` containing valid MRS-S:
-
-```clojure
-(working-set-response
-  :version 1.0
-  :source-hash "sha256:..."  ; Must match request for conflict detection
+  :source-hash "sha256:a3f2c1b9e4d7..."
   
   :scope
     (:measures #uuid "018c3f40-002d-..." #uuid "018c3f40-0034-...")
-    (:parts [clarinet-1])
+    (:instruments [clarinet-bb])
+    (:voices [v1])
   :display-hint (:measures 45 52)
   
+  :bundle orchestrate
+  :allowed-ops [create-event update-event delete-event create-span delete-span]
+  
+  :task "Add clarinet countermelody responding to violin theme"
+  
+  :constraints
+    ((range clarinet-bb E3 C7)
+     (avoid parallel-fifths violin-1))
+  
   :content
+    (meta
+      :time 4/4
+      :key C :mode minor
+      :tempo 132)
+    
+    (instruments
+      (instrument clarinet-bb :name "Clarinet in Bb" :abbr "Cl." 
+                  :staves [treble] :transposition (down M2)))
+    
     (measures
       (measure 
         :id #uuid "018c3f40-002d-..."
         :number 45
-        :beat-start 487+1/4
-        (clarinet-1
-          (v1
-            (: 0 Eb4.q :dyn mp :id #uuid "018c3f50-..." :at 487+1/4)
-            (: 1 D4.q :id #uuid "018c3f51-..." :at 488+1/4)
-            (: 2 Eb4.e :id #uuid "018c3f52-..." :at 489+1/4)
-            (: 2.5 F4.e :id #uuid "018c3f53-..." :at 489+3/4)
-            (: 3 G4.q :id #uuid "018c3f54-..." :at 490+1/4))))
-      ...)
+        :beat-start 487
+        (clarinet-bb
+          (v1))))  ; Empty — target for agent
     
-    (spans
-      (slur :id #uuid "018c3f55-..." 
-            :from #uuid "018c3f50-..." 
-            :to #uuid "018c3f54-..."))
+    (spans)
   
-  :rationale "Created contrary motion against violin line. Chord tones on downbeats.")
+  :context-views
+    (context-view melodic-reference
+      :instruments [violin-1]
+      :measures #uuid "018c3f40-002d-..." #uuid "018c3f40-0034-..."
+      :content
+        (measures
+          (measure :id #uuid "..." :number 45
+            (violin-1
+              (v1
+                (: 0 G5.q :id #uuid "...")
+                (: 1 A5.e :id #uuid "...")
+                ...)))))
+    
+    (context-view harmonic-context
+      :content
+        (harmony-events
+          (chord :measure #uuid "..." :beat 0 :symbol Cm :function i)
+          (chord :measure #uuid "..." :beat 2 :symbol Fm :function iv)))
+  
+  :structural-index-ref "sha256:abc123..."
+  
+  :available-queries
+    [:melodic-content :harmonic-analysis :orchestration-density])
 ```
 
-## Enforcement
+## Envelope Fields
 
-When an agent returns a response, the orchestrator validates:
+### Required Fields
 
-1. **Scope bounds**: All modified content is within declared scope
-2. **Lane permissions**: All modifications are within granted lanes
-3. **Allowed ops**: Only permitted operation types were used
-4. **Lock compliance**: No locked regions/lanes were modified
-5. **Preconditions**: Source hash and measure hashes match (conflict detection)
+| Field | Type | Description |
+|-------|------|-------------|
+| `:version` | decimal | Envelope version (1.0) |
+| `:source-hash` | string | SHA-256 hash of source state (conflict detection) |
+| `:scope` | scope-spec | What the agent may modify |
+| `:content` | MRS-S | The score fragment (readable, target of ops) |
 
-If validation fails:
-- **Reject** the entire response, or
-- **Strip** out-of-scope changes and apply valid changes (with warning)
-
-## Scope Negotiation
-
-Agents can request scope adjustments:
+### Scope Specification
 
 ```clojure
-(scope-request
-  :reason "Phrase extends beyond current boundary"
-  :current (:measures #uuid "..." #uuid "...")
-  :requested (:measures #uuid "..." #uuid "...")
-  :requested-lanes [notes expression]  ; May request additional lanes
-  :justification "Slur endpoint at beat 487+3/4 in measure 56")
+:scope
+  (:measures #uuid "..." #uuid "...")   ; UUID range (inclusive)
+  (:instruments [clarinet-bb flute-1])  ; Instruments included
+  (:voices [v1 v2])                     ; Optional: specific voices
+:display-hint (:measures 45 52)         ; Human-readable, informational
 ```
 
-The orchestrator can:
-- **Grant**: Provide expanded Working Set
-- **Deny**: Return error with reason
-- **Offer alternative**: Suggest different scope
+**Important**: Scope uses UUIDs for structural stability. Display hints are for human orientation only — never used for structural reference.
 
-```clojure
-(scope-response
-  :status :granted
-  :scope
-    (:measures #uuid "..." #uuid "...")
-  :lanes [notes expression]
-  :content ...)
+### Permission Fields
 
-; OR
+| Field | Type | Description |
+|-------|------|-------------|
+| `:bundle` | keyword | Lane bundle granting permissions |
+| `:allowed-ops` | list | Explicit list of permitted operation types |
 
-(scope-response
-  :status :denied
-  :reason "Requested scope overlaps with active lock"
-  :alternative
-    (:measures #uuid "..." #uuid "..."))
-```
+### Optional Fields
 
-## Self-Containment Principle
+| Field | Type | Description |
+|-------|------|-------------|
+| `:task` | string | Natural language task description |
+| `:constraints` | list | Validation rules agent must satisfy |
+| `:context-views` | list | Task-adaptive context views |
+| `:structural-index-ref` | string | Hash reference to structural index |
+| `:available-queries` | list | Queries agent may request |
 
-Every Working Set Envelope MUST be **self-contained**: the `:content` can be parsed and validated independently.
+## Content Self-Containment
 
-This means:
-- Part definitions MUST be included
+The `:content` of a Working Set Envelope MUST be parseable as standalone MRS-S:
+
+- Instrument definitions MUST be included
 - Time/key/tempo state at extraction start MUST be declared
-- Spans MUST have both endpoints within scope (or be marked with boundary markers)
+- Spans MUST have both endpoints within scope OR be marked with boundary markers
 
-See: [Extract-Replace Protocol](/extract-replace-protocol) for boundary span handling.
+This enables validation of the content independent of the full score.
 
-## Working with Draft States
+## Task-Adaptive Context Views
 
-Working Set Envelopes can include placeholders:
+Context views provide task-relevant information beyond the edit scope. Unlike fixed "near/far" rings, views are selected and shaped for the specific task.
+
+See: [Task-Adaptive Context Views](/agentic-operations#task-adaptive-context-views)
+
+### View Types
+
+| View Type | Purpose |
+|-----------|---------|
+| `melodic-reference` | Melody the agent should respond to |
+| `harmonic-context` | Chord progression and key areas |
+| `orchestration-map` | Active instruments and texture |
+| `phrase-structure` | Phrase boundaries and form |
+| `dynamics-profile` | Dynamics trajectory |
+| `thematic-references` | Themes and motifs |
+
+### View Selection by Task
+
+| Task Type | Typical Views |
+|-----------|---------------|
+| Countermelody | melodic-reference, harmonic-context |
+| Orchestration | orchestration-map, dynamics-profile |
+| Dynamics pass | phrase-structure, dynamics-profile |
+| Harmonization | melodic-reference, phrase-structure |
+
+## Boundary-Crossing Spans
+
+When a span crosses the envelope boundary:
 
 ```clojure
-:content
-  (measures
-    (measure :id #uuid "..."
-      ;; Existing content
-      (flute-1 (v1 (: 0 G5.q ...)))
-      
-      ;; Placeholder for agent to resolve
-      (placeholder
-        :id #uuid "..."
-        :parts [violin-1 violin-2]
-        :intent :accompaniment
-        :description "String accompaniment, follow harmonic rhythm")))
+(slur
+  :id #uuid "018c3f2c-..."
+  :from #uuid "018c3f2a-..."    ; Inside scope
+  :to #uuid "018c3f2b-..."      ; Outside scope
+  :boundary-exit true)          ; Marks endpoint outside
 ```
 
-The agent's task may be to resolve the placeholder with actual content.
+### Boundary Rules
 
-See: [Draft States](/draft-states) for placeholder primitives and resolution.
+- `:boundary-entry true` — span starts outside scope, ends inside
+- `:boundary-exit true` — span starts inside scope, ends outside
+- Both markers — span crosses through scope
+
+Boundary-marked spans are **read-only** at their boundary endpoints. Agents MAY NOT modify `:from`, `:to`, or `:events` of boundary-marked spans.
+
+## Available Queries
+
+Agents may request additional context:
+
+```clojure
+:available-queries
+  [:melodic-content    ; Request melody from specific instruments
+   :harmonic-analysis  ; Request harmony analysis
+   :orchestration-density ; Request texture information
+   :phrase-boundaries  ; Request phrase structure
+   :thematic-occurrences] ; Request theme locations
+```
+
+Query request (in agent response):
+
+```clojure
+(query-request
+  :type melodic-content
+  :instruments [oboe-1]
+  :measures #uuid "..." #uuid "..."
+  :reason "Need oboe line to avoid doubling")
+```
+
+The orchestrator may grant or deny queries based on scope and permissions.
+
+## Constraints
+
+Constraints specify rules that generated content must satisfy:
+
+```clojure
+:constraints
+  ((range clarinet-bb E3 C7)           ; Notes within instrument range
+   (avoid parallel-fifths violin-1)    ; Voice-leading rule
+   (prefer chord-tones downbeats))     ; Style preference
+```
+
+### Constraint Types
+
+| Type | Syntax | Description |
+|------|--------|-------------|
+| Range | `(range <instrument> <low> <high>)` | Notes within range |
+| Avoid | `(avoid <violation> <ref-part>?)` | Prevent voice-leading errors |
+| Prefer | `(prefer <feature> <location>)` | Style preferences |
+| Density | `(note-density <min> <max>)` | Notes per measure |
+
+Constraint violations are caught in the musical rules validation stage.

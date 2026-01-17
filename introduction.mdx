@@ -7,12 +7,13 @@ description: "Motivation, goals, non-goals, and terminology for MRS."
 
 MRS (Music Representation Syntax) is a format for encoding musical scores optimized for AI-assisted composition workflows:
 
-- **MRS-S**: A single canonical format (S-expression based) for complete, archival-quality scores with stable UUID identifiers
-- **Working Set Envelopes**: Scoped MRS-S fragments with context rings for bounded agent operations
-- **Synopsis**: Compressed structural views providing global awareness
+- **MRS-S**: The canonical storage format (S-expression based) for complete, archival-quality scores with stable UUID identifiers
+- **MRS-Ops**: The typed operation protocol for reliable agent mutations
+- **Working Set Envelopes**: Scoped MRS-S fragments with task-adaptive context for bounded agent operations
+- **Structural Index**: Compressed global views providing structural awareness
 - **Overlays**: Analytical metadata attached to score regions
 
-Agents receive valid MRS-S and return valid MRS-S—no second syntax, no format conversion, no parsing ambiguity.
+Agents read MRS-S and write MRS-Ops. The orchestrator validates operations progressively and applies them to canonical state.
 
 See: [`/MRS-Specification-RFC#abstract`](/MRS-Specification-RFC#abstract)
 
@@ -42,30 +43,31 @@ A full orchestral score is too large for any context window. Editing measure 847
 
 Musical decisions require understanding surrounding material. An agent writing a countermelody needs to know phrase boundaries, harmonic rhythm, and thematic relationships—not just the target measures in isolation.
 
-### The Structural Fragility Problem
+### The Reliability Problem
 
-Existing formats use positional references that break during editing. Insert a measure, and every reference to "measure 45" is now wrong. MRS solves this with UUID-first identity.
+Asking AI to emit complete, structurally-valid score fragments creates high failure rates:
+- Accidental omissions (agent returns less than given → content deleted)
+- Calculation errors (duration sums, absolute positions)
+- Hallucinated references (IDs that don't exist)
 
 MRS solves these through:
-- **Stable UUID identifiers** for measures and events (not position-dependent references)
-- **Context rings** providing surrounding material at graduated detail levels
-- **Synopsis** offering compressed structural views for global awareness
-- **A single canonical syntax** for all operations
-- **An orchestrator pattern** with edit lanes for safe multi-agent workflows
+- **Separation of storage (MRS-S) and mutation (MRS-Ops)** formats
+- **Orchestrator authority** for UUIDs and derived fields
+- **Task-adaptive context views** (not fixed rings)
+- **Progressive validation** before state mutation
+- **Player-Instrument model** for professional orchestration
 
 See: [`/MRS-Specification-RFC#1-introduction`](/MRS-Specification-RFC#1-introduction)
 
 ## Goals
 
-1. **Semantic completeness**: Encode everything a professional engraver needs
-2. **Deterministic parsing**: One input → one parse tree, always
+1. **Semantic completeness**: Encode everything a professional engraver needs (Dorico-level granularity)
+2. **Reliable agent output**: Typed operations with progressive validation minimize repair loops
 3. **Structural stability**: UUID identifiers survive insertions and deletions
-4. **Context-aware operations**: Agents work with appropriate surrounding context
-5. **Machine-friendly generation**: Predictable patterns for reliable LLM output
-6. **Human auditability**: People can review and debug outputs
-7. **Diff-friendly structure**: Line-based changes produce meaningful diffs
-8. **Renderer-agnostic semantics**: Describe *what*, not *how to draw*
-9. **From-scratch composition**: Support iterative creation, not just editing
+4. **Professional orchestration**: Player/instrument model supports doubling, switching, condensing
+5. **Task-appropriate context**: Agents receive information relevant to their specific task
+6. **Deterministic reconciliation**: Operations produce predictable, auditable results
+7. **Human auditability**: Operations are semantic diffs; humans review intent, not syntax
 
 See: [`/MRS-Specification-RFC#1-2-goals`](/MRS-Specification-RFC#1-2-goals)
 
@@ -86,21 +88,23 @@ Key terms used throughout the spec:
 
 | Term | Definition |
 |------|------------|
-| Score | A complete musical work in MRS format |
-| Part | A single instrument or voice throughout a score |
-| Staff | A visual grouping of five lines; parts may have multiple staves |
-| Voice | An independent melodic/rhythmic stream within a staff (local per measure) |
+| Score | A complete musical work in MRS-S format |
+| Player | A performer who may play multiple instruments |
+| Instrument | A specific sound source with fixed transposition and range |
+| Staff | A visual grouping of five lines; instruments may have multiple staves |
+| Voice | An independent melodic/rhythmic stream within a staff |
 | Measure | A metrical unit bounded by barlines, identified by UUID |
 | Event | An atomic musical occurrence (note, rest, chord), identified by UUID |
 | Span | A relation connecting multiple events (slur, beam, hairpin) |
-| Synopsis | A compressed structural view of the full score |
+| MRS-S | The canonical storage format (S-expression based) |
+| MRS-Ops | The typed operation protocol for agent mutations |
+| Structural Index | A compressed structural view of the full score |
 | Working Set Envelope | A scoped MRS-S fragment with context for agent tasks |
-| Context Ring | Surrounding material at reduced detail level |
+| Context View | Task-adaptive information beyond the edit scope |
 | Overlay | Analytical metadata attached to score regions |
 | Orchestrator | System that coordinates agent tasks and manages the full score |
-| Edit Lane | A capability boundary defining what an agent may modify |
-| HarmonyPlan | Embedded layer for chord symbols and harmonic structure |
-| Placeholder | Explicit marker for intentionally incomplete content |
+| Lane | A permission boundary for a category of content |
+| Lane Bundle | A predefined set of lanes for common workflows |
 
 See: [`/MRS-Specification-RFC#1-4-terminology`](/MRS-Specification-RFC#1-4-terminology)
 
@@ -114,12 +118,14 @@ See: [`/MRS-Specification-RFC#1-4-terminology`](/MRS-Specification-RFC#1-4-termi
  Harmony    Melody      Orch.      Expression
   Agent      Agent      Agent        Agent
     │           │           │           │
+    │        (read MRS-S, write MRS-Ops)
+    │           │           │           │
     └───────────┴───────────┴───────────┘
                 │
          Working Set Envelopes
-         (scoped MRS-S + edit lanes)
+         (scoped MRS-S + task-adaptive context)
 ```
 
-Multiple agents can work in parallel, but only the orchestrator commits changes. Edit lanes ensure agents with disjoint concerns can safely edit the same region.
+Agents read MRS-S content with task-appropriate context. Agents write typed MRS-Ops operations. The orchestrator validates progressively and applies to canonical state.
 
-See: [Orchestrator Contract](/orchestrator-contract) for details on lanes, transactions, and merge semantics.
+See: [Architecture Overview](/architecture-overview) and [Orchestrator Contract](/orchestrator-contract) for details.

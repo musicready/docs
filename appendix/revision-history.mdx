@@ -5,4 +5,39 @@ description: "Version history of the MRS specification."
 
 | Version | Date | Summary |
 |---------|------|---------|
-| 0.3 | 2025-12-12 | Current version. Stable UUID identifiers for measures, events, and spans. UUID-based scoping for all internal references. Score Synopsis for global structural awareness. Context Rings for graduated surrounding context. Analytical Overlays for typed metadata. Scope Negotiation Protocol. Query Resolution for human-friendly navigation. Sequential workflow model with structural fluidity. |
+| 1.0 | 2026-01-17 | Major architecture revision. Separation of storage (MRS-S) and mutation (MRS-Ops) formats. Player-Instrument-Staff model replacing Part=Instrument. Orchestrator authority for UUID minting and derived field computation. Task-adaptive context views replacing fixed context rings. Lane bundles for permission management. Progressive validation pipeline. Structural Index replacing Synopsis. |
+| 0.3 | 2025-12-12 | Previous version. Stable UUID identifiers. UUID-based scoping. Score Synopsis for global structural awareness. Context Rings for graduated surrounding context. Analytical Overlays. Scope Negotiation Protocol. Query Resolution for human-friendly navigation. |
+
+## Key Changes in 1.0
+
+### Architectural
+
+1. **MRS-Ops**: New typed operation protocol for agent mutations. Agents read MRS-S but write typed operations (create-event, update-event, delete-event, etc.)
+
+2. **Orchestrator Authority**: Orchestrator is the sole authority for:
+   - UUID minting (agents use temporary IDs)
+   - Derived field computation (`:at`, `:beat-start`, `:sec-start`)
+   - Canonical state management
+
+3. **Progressive Validation**: Operations validated in stages before application (syntax → references → permissions → musical rules → application)
+
+### Data Model
+
+4. **Player-Instrument-Staff Model**: Replaced Part=Instrument with professional orchestration semantics:
+   - Players own instruments (supporting doublings)
+   - Instruments have staves, transposition, ranges
+   - Mid-score instrument changes supported
+
+5. **Percussion Kits**: Explicit support for kit definitions with component instruments
+
+### Context and Permissions
+
+6. **Task-Adaptive Context Views**: Replaced fixed "near/far" context rings with dynamic views tailored to specific task types (melodic-reference, harmonic-context, orchestration-map, etc.)
+
+7. **Lane Bundles**: Predefined permission sets for common workflows (orchestrate, dynamics-pass, notation-cleanup, full-compose)
+
+### Syntax
+
+8. **Canonical Rational Syntax**: Removed decimal literals; enforced `2+1/2` format for beat positions
+
+9. **Structural Index**: Renamed from "Synopsis" for clarity

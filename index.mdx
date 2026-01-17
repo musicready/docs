@@ -15,39 +15,54 @@ AI cannot currently compose or edit full orchestral scores reliably. Three funda
 
 1. **Scale**: A full orchestral score (~1.5M tokens) exceeds any context window
 2. **Context**: Musical decisions require understanding surrounding material
-3. **Fragility**: Existing formats use positional references that break during editing
+3. **Reliability**: Asking AI to emit complete score fragments creates high failure rates
 
-MRS solves these through **UUID-first identity**, **context-aware extraction**, and a **single-writer orchestrator pattern** that makes iterative AI composition safe and reliable.
+MRS solves these through architectural separation:
+
+- **MRS-S** for storage: Complete, archival-quality encoding with stable UUIDs
+- **MRS-Ops** for mutation: Typed operation protocol with orchestrator-derived fields
+- **Task-adaptive context**: Dynamic views tailored to specific editing tasks
+- **Orchestrator authority**: Single source of truth for UUIDs, derived fields, and state
 
 **Is this approach feasible?** [Yes—read the detailed analysis →](/problem-and-approach)
 
-## Core Components
+## Core Architecture
 
-- **MRS-S**: A single canonical format (S-expression based) for complete, archival-quality scores with stable UUID identifiers
-- **Working Set Envelopes**: Scoped MRS-S fragments with context rings for bounded agent operations
-- **Synopsis**: Compressed structural views providing global awareness
-- **Overlays**: Analytical metadata attached to score regions
-- **Orchestrator**: Single-writer coordinator with edit lanes for safe multi-agent workflows
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    SEMANTIC MODEL                            │
+│         (One meaning, multiple representations)              │
+└─────────────────────────────────────────────────────────────┘
+                    │                    │
+           ┌───────┴───────┐    ┌───────┴───────┐
+           │    MRS-S      │    │   MRS-Ops     │
+           │  (storage,    │    │  (mutation,   │
+           │   reading)    │    │   writing)    │
+           └───────────────┘    └───────────────┘
+```
+
+**MRS-S**: Agents read complete, human-auditable score fragments
+**MRS-Ops**: Agents write typed operations that the orchestrator validates and applies
 
 ## Key Features
 
-### Stable Identity
-Every measure, event, and span carries a stable UUIDv7 identifier. Measure numbers are display properties—all internal references use UUIDs, ensuring structural stability through insertions, deletions, and reorderings.
+### Separation of Storage and Mutation
+Different formats optimized for different purposes. Agents read MRS-S for complete context; agents write typed operations for reliable mutations. This eliminates accidental deletions, calculation errors, and hallucinated references.
 
-### Context-Aware Extraction
-Working Set Envelopes provide not just the edit region, but graduated context rings with surrounding material at reduced detail, plus synopsis access for global structural awareness.
+### Player-Instrument-Staff Model
+Professional orchestration semantics with instrument doubling and switching. Flute 2 can double piccolo. Clarinet can switch from Bb to A. Percussion players can cover multiple instruments.
 
-### Single Syntax
-Agents receive valid MRS-S and return valid MRS-S. There is no second format, no abbreviations, no context-dependent parsing. Extraction and replacement are trivial operations.
+### Orchestrator Authority
+The orchestrator is the sole authority for UUID minting, derived field computation, and state management. Agents use temporary IDs; the orchestrator assigns final UUIDs. This eliminates coordination failures.
 
-### Edit Lanes
-Multiple agents can work in parallel on the same region with different concerns (notes, dynamics, lyrics). The orchestrator merges changes safely based on lane ownership.
+### Task-Adaptive Context
+Agents receive context views tailored to their specific task—not fixed "near/far" rings. A countermelody task gets the melody it responds to. An orchestration task gets the texture map.
 
-### Draft States
-First-class support for intentionally incomplete content. Placeholder regions, sketch rhythms, and harmonic plans without full voicings enable natural iterative workflows.
+### Progressive Validation
+Operations are validated in stages before application: syntax, references, permissions, musical rules. Errors are caught before state mutation with specific feedback.
 
-### Human-in-the-Loop
-Checkpoints lock approved decisions (form, harmony, orchestration). Human review gates ensure quality at critical junctures.
+### Lane Bundles
+Common workflows grant multiple related lanes. "Orchestrate" grants notes + expression + technique. Reduces negotiation overhead for arrangers.
 
 ## Quick Links
 
@@ -55,12 +70,12 @@ Checkpoints lock approved decisions (form, harmony, orchestration). Human review
 - [The Problem & Why MRS is Feasible](/problem-and-approach) — Detailed feasibility analysis
 - [Introduction](/introduction) — Motivation, goals, and terminology
 - [Design Principles](/design-principles) — Core design philosophy
-- [Quickstart](/quickstart) — Get started with MRS-S
+- [Quickstart](/quickstart) — Get started with MRS
 
 **Architecture**
 - [Architecture Overview](/architecture-overview) — How components work together
-- [Orchestrator Contract](/orchestrator-contract) — Edit lanes, transactions, merge semantics
-- [Draft States](/draft-states) — Placeholder primitives for iterative composition
+- [Orchestrator Contract](/orchestrator-contract) — Validation, transactions, conflict detection
+- [Working Set Envelope](/working-set-envelope) — Scoped extraction with context
 
 **Specification**
 - [MRS Specification RFC](/MRS-Specification-RFC) — Full normative specification
@@ -69,10 +84,10 @@ Checkpoints lock approved decisions (form, harmony, orchestration). Human review
 
 MRS is designed for symphonies-from-scratch: iterative creation of complex multi-movement works through AI conversation. This means supporting:
 
+- **Professional orchestration**: Player/instrument model with doubling and switching
 - **Structural creation**: Insert measures, sections, movements—not just edit existing content
 - **Incomplete states**: Early-stage work has placeholders ("strings texture TBD")
-- **Cross-boundary spans**: Hairpins, slurs that cross edit boundaries
+- **Reliable iteration**: Typed operations minimize repair loops
 - **Human checkpoints**: Lock form, lock harmony, lock orchestration progressively
-- **Conflict-free iteration**: Multiple agents contributing without destructive overwrites
 
 If MRS handles symphonies-from-scratch, it handles everything simpler too.

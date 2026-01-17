@@ -1,97 +1,173 @@
 ---
 title: "Architecture Overview"
-description: "How MRS-S, Working Set Envelopes, Synopsis, and Overlays enable context-aware agent workflows."
+description: "How MRS components work together for AI-assisted composition."
 ---
 
-This page follows RFC section 3. For the full text, see: [`/MRS-Specification-RFC#3-architecture-overview`](/MRS-Specification-RFC#3-architecture-overview).
+MRS enables context-aware agent operations on full-scope scores through architectural separation of storage and mutation formats, orchestrator authority, and task-adaptive context.
 
-MRS enables **context-aware agent operations** on **full-scope scores**: tools and machine agents operate on focused regions with appropriate surrounding context, while the orchestrator maintains the full score and handles structural coordination.
+See: [`/MRS-Specification-RFC#3-architecture-overview`](/MRS-Specification-RFC#3-architecture-overview)
+
+## System Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         MRS ARCHITECTURE                                 │
+│                                                                          │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │                      SEMANTIC MODEL                                │  │
+│  │   Players → Instruments → Staves                                   │  │
+│  │   Measures → Events (notes, rests, chords)                         │  │
+│  │   Spans (slurs, ties, beams, hairpins)                             │  │
+│  │   Analytical Overlays                                              │  │
+│  │   Structural Index                                                 │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                      │                         │                         │
+│             ┌────────┴────────┐       ┌────────┴────────┐               │
+│             │     MRS-S       │       │    MRS-Ops      │               │
+│             │   (storage,     │       │   (mutation,    │               │
+│             │    reading)     │       │    writing)     │               │
+│             └─────────────────┘       └─────────────────┘               │
+│                                               │                          │
+│  ┌────────────────────────────────────────────┴─────────────────────┐   │
+│  │                       ORCHESTRATOR                                │   │
+│  │                                                                   │   │
+│  │   • UUID minting (tmp-id → UUID mapping)                         │   │
+│  │   • Derived field computation (:at, :beat-start)                 │   │
+│  │   • Progressive validation pipeline                              │   │
+│  │   • Task-adaptive context generation                             │   │
+│  │   • Lane bundle management                                       │   │
+│  │   • Changeset audit trail                                        │   │
+│  └───────────────────────────────────────────────────────────────────┘   │
+│                      │                                                   │
+│  ┌───────────────────┴───────────────────────────────────────────────┐  │
+│  │                  WORKING SET ENVELOPE                              │  │
+│  │                                                                    │  │
+│  │   :content (MRS-S fragment — agent reads this)                    │  │
+│  │   :context-views (task-adaptive, queryable)                       │  │
+│  │   :structural-index-ref (global awareness)                        │  │
+│  │   :bundle (lane permissions for task type)                        │  │
+│  │   :available-queries (what agent can request)                     │  │
+│  └────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
 ## Core Components
 
+### MRS-S (Storage Format)
+
+The canonical format for complete, archival-quality scores:
+- Human-readable S-expression syntax
+- Stable UUIDv7 identifiers for all objects
+- Complete semantic fidelity
+- Used for storage, interchange, and agent input
+
+### MRS-Ops (Mutation Protocol)
+
+Typed operations for reliable agent output:
+- Explicit create/update/delete operations
+- Temporary IDs (orchestrator assigns UUIDs)
+- Orchestrator computes derived fields
+- Eliminates accidental deletions and calculation errors
+
+### Orchestrator
+
+Central coordinator that makes AI composition safe:
+- Sole authority for UUID minting
+- Computes derived fields (`:at`, `:beat-start`)
+- Progressive validation before application
+- Generates task-adaptive context views
+- Maintains audit trail
+
+### Working Set Envelope
+
+Bounded extraction with context for agent tasks:
+- Scoped MRS-S content (what agent can read/modify)
+- Task-adaptive context views
+- Lane bundle permissions
+- Structural index reference for global awareness
+
+### Structural Index
+
+Compressed global view of the score:
+- Form/structure overview
+- Key areas and tempo map
+- Player/instrument activity
+- Rehearsal mark locations
+
+### Analytical Overlays
+
+Typed metadata attached to score regions:
+- Harmonic analysis (chord symbols, functions)
+- Thematic analysis (motifs, themes)
+- Form analysis (phrases, periods, sections)
+
+## Data Flow
+
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         MRS ECOSYSTEM                                │
-│                                                                      │
-│   ┌────────────────────────────────────────────────────────────┐    │
-│   │                        MRS-S                                │    │
-│   │                The Single Canonical Format                  │    │
-│   │                                                             │    │
-│   │ • Complete, hierarchical, self-documenting                  │    │
-│   │ • Measures and events indexed by stable UUIDs               │    │
-│   │ • Used for storage, interchange, AND agent I/O              │    │
-│   └────────────────────────────────────────────────────────────┘    │
-│                              │                                       │
-│              ┌───────────────┼───────────────┐                      │
-│              ▼               ▼               ▼                      │
-│   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐             │
-│   │   SYNOPSIS   │  │ WORKING SET  │  │   OVERLAYS   │             │
-│   │              │  │   ENVELOPE   │  │              │             │
-│   │ • Structural │  │              │  │ • Harmonic   │             │
-│   │   overview   │  │ • Scoped     │  │   analysis   │             │
-│   │ • Read-only  │  │   content    │  │ • Motivic    │             │
-│   │ • Derived    │  │ • Context    │  │   tracking   │             │
-│   │              │  │   rings      │  │ • Typed,     │             │
-│   │              │  │ • Scope      │  │   optional   │             │
-│   │              │  │   negotiation│  │              │             │
-│   └──────────────┘  └──────────────┘  └──────────────┘             │
-└─────────────────────────────────────────────────────────────────────┘
+1. EXTRACTION
+   Orchestrator creates Working Set Envelope:
+   - Extracts MRS-S fragment for scope
+   - Generates task-adaptive context views
+   - Grants lane bundle permissions
+   - Includes structural index reference
+
+2. AGENT PROCESSING
+   Agent receives Working Set Envelope:
+   - Reads MRS-S content + context views
+   - Produces MRS-Ops (typed operations)
+   - Uses tmp-ids for new objects
+
+3. VALIDATION (Progressive)
+   Orchestrator validates operations:
+   - Syntax validation (well-formed?)
+   - Reference validation (IDs exist?)
+   - Permission validation (within lanes/scope?)
+   - Musical rule validation (constraints satisfied?)
+
+4. APPLICATION
+   Orchestrator applies validated operations:
+   - Maps tmp-ids to UUIDs
+   - Computes derived fields
+   - Updates canonical MRS-S state
+   - Records audit trail
+
+5. RESPONSE
+   Orchestrator returns result:
+   - Success with id-mapping and revision
+   - Or rejection with specific errors
 ```
 
-## The Context Problem
+## The Scale Problem
 
-Full scores are too large for context windows, but editing requires understanding surrounding material:
+| Score Type | Parts | Measures | Events | Tokens |
+|------------|-------|----------|--------|--------|
+| Lead sheet | 1 | 32 | ~200 | ~2K |
+| Piano sonata | 2 | 300 | ~5,000 | ~40K |
+| String quartet | 4 | 400 | ~8,000 | ~65K |
+| Chamber orchestra | 25 | 500 | ~50,000 | ~400K |
+| Full orchestra | 90 | 1000 | ~200,000 | ~1.5M |
 
-| Score Type | Approx. Tokens |
-|------------|----------------|
-| Lead sheet | ~2K |
-| Piano sonata | ~40K |
-| Full orchestra | ~1.5M |
+MRS solves this through bounded extraction with task-adaptive context—agents work on focused regions while understanding their musical surroundings.
 
-Editing the clarinet part in measures 45-52 requires:
-- The melodic material being responded to
-- The harmonic context
-- Phrase boundaries
-- What comes before and after
+## Multi-Agent Coordination
 
-See: [`/MRS-Specification-RFC#3-2-context-problem`](/MRS-Specification-RFC#3-2-context-problem)
-
-## The Solution: Context-Aware Extraction
-
-Working Set Envelopes extract:
-
-1. **Content**: Full-detail MRS-S for the edit region (writable)
-2. **Context rings**: Surrounding material at reduced detail (read-only)
-3. **Synopsis access**: Structural overview of the entire score (read-only)
-
-## Stable Identifiers
-
-Every measure, event, and span carries a stable UUIDv7 identifier:
-
-```clojure
-(measure 
-  :id #uuid "018c3f40-1234-7890-abcd-ef1234567890"
-  :number 45    ; Display property only
-  :beat-start 487+1/4
-  ...)
+```
+         ORCHESTRATOR (owns canonical state)
+                │
+    ┌───────────┼───────────┬───────────┐
+    ▼           ▼           ▼           ▼
+ Harmony    Melody      Orch.      Expression
+  Agent      Agent      Agent        Agent
+    │           │           │           │
+    └───────────┴───────────┴───────────┘
+                │
+    (read MRS-S, write MRS-Ops, disjoint lanes)
 ```
 
-- `:id` — Stable identity, survives insertions/deletions
-- `:number` — Display property for human navigation
+Multiple agents can work in parallel with disjoint lane bundles. The orchestrator validates and applies operations, detecting conflicts via source-hash comparison.
 
-All internal references use UUIDs. Measure numbers appear only in `:display-hint` fields.
+## Related Documentation
 
-See: [`/MRS-Specification-RFC#3-3-stable-identifiers`](/MRS-Specification-RFC#3-3-stable-identifiers)
-
-## Why One Format?
-
-MRS uses a single syntax for all operations:
-
-| Benefit | Description |
-|---------|-------------|
-| Unambiguous syntax | No context-dependent parsing |
-| Trivial merge logic | Scope replacement: delete old, insert new |
-| Single parser | One grammar, one implementation |
-| No conversion | Agent I/O uses the same syntax as storage |
-
-**The insight**: agents don't need a different format—they need a different *scope* with appropriate *context*.
+- [Orchestrator Contract](/orchestrator-contract) — Validation, transactions, conflict detection
+- [Working Set Envelope](/working-set-envelope) — Scoped extraction with context
+- [MRS-Ops Protocol](/agentic-operations) — Typed operations for agent mutations

@@ -1,6 +1,6 @@
 ---
 title: "Appendix: Quick Reference"
-description: "Duration codes, required properties, and Working Set scope fields."
+description: "Duration codes, lane bundles, context views, and required properties."
 ---
 
 See: [`/MRS-Specification-RFC#appendix-b-quick-reference`](/MRS-Specification-RFC#appendix-b-quick-reference)
@@ -12,28 +12,40 @@ See: [`/MRS-Specification-RFC#appendix-b-quick-reference`](/MRS-Specification-RF
 | `w` | Whole | 4 |
 | `h` | Half | 2 |
 | `q` | Quarter | 1 |
-| `e` | Eighth | 0.5 |
-| `s` | Sixteenth | 0.25 |
-| `t` | 32nd | 0.125 |
+| `e` | Eighth | 1/2 |
+| `s` | Sixteenth | 1/4 |
+| `t` | 32nd | 1/8 |
+| `x` | 64th | 1/16 |
 
 Add `.` for dotted, `..` for double-dotted.
 
-## Required Event Properties
+## Required Properties (in MRS-S storage)
 
-| Property | Description |
-|----------|-------------|
-| `:id` | Stable UUIDv7 identifier |
-| `:at` | Absolute beat position |
+### Event Properties
 
-## Required Measure Properties
+| Property | Description | Computed By |
+|----------|-------------|-------------|
+| `:id` | Stable UUIDv7 identifier | Orchestrator |
+| `:at` | Absolute beat position | Orchestrator (derived) |
 
-| Property | Description |
-|----------|-------------|
-| `:id` | Stable UUIDv7 identifier |
-| `:number` | Display number (human navigation) |
-| `:beat-start` | Absolute beat position |
+### Measure Properties
 
-## Event Properties
+| Property | Description | Computed By |
+|----------|-------------|-------------|
+| `:id` | Stable UUIDv7 identifier | Orchestrator |
+| `:number` | Display number (human navigation) | Orchestrator |
+| `:beat-start` | Absolute beat position | Orchestrator (derived) |
+
+## Agent Output (MRS-Ops)
+
+Agents provide position relative to measure; orchestrator computes absolute position:
+
+| Agent Provides | Orchestrator Derives |
+|----------------|----------------------|
+| `:beat` (relative to measure) | `:at` (absolute position) |
+| `:tmp-id` (temporary identifier) | `:id` (UUIDv7) |
+
+## Optional Event Properties
 
 | Property | Values | Description |
 |----------|--------|-------------|
@@ -44,23 +56,56 @@ Add `.` for dotted, `..` for double-dotted.
 | `:stem` | up, down | Stem direction |
 | `:grace` | true/false | Grace note |
 
+## Lane Bundles
+
+| Bundle | Lanes | Use Case |
+|--------|-------|----------|
+| `orchestrate` | notes, expression, technique | Write parts from sketch |
+| `dynamics-pass` | expression | Add dynamics to existing music |
+| `notation-cleanup` | notes, technique | Fix notation details |
+| `full-compose` | structure, temporal, harmonyPlan, notes, expression, technique | Complete composition freedom |
+
+## Context View Types
+
+| View Type | Content | Use Case |
+|-----------|---------|----------|
+| `melodic-reference` | Melody to respond to | Counterpoint, accompaniment |
+| `harmonic-context` | Chord progression | Voice leading |
+| `orchestration-map` | Active instruments, texture | Scoring decisions |
+| `phrase-structure` | Phrase boundaries | Phrasing decisions |
+| `dynamics-profile` | Dynamics trajectory | Dynamic shaping |
+| `thematic-references` | Themes and motifs | Thematic development |
+
 ## Working Set Scope Fields
 
 | Field | Required | Description |
 |-------|----------|-------------|
 | `:measures` | Yes | UUID range (inclusive) |
-| `:parts` | Yes | List of part IDs to include |
+| `:instruments` | Yes | List of instrument IDs to include |
 | `:voices` | No | List of voice IDs (default: all) |
 | `:display-hint` | No | Human-readable measure numbers |
 | `:source-hash` | No | SHA-256 for conflict detection |
-| `:context` | No | Human-readable task description |
+| `:task-context` | No | Human-readable task description |
 | `:constraints` | No | Validation rules for agent output |
 
-## Context Ring Reduction Levels
+## Dynamics
 
-| Level | Content |
-|-------|---------|
-| `:full` | Everything (no reduction) |
-| `:melodic-skeleton` | Downbeats, phrase boundaries, structural tones |
-| `:harmonic-rhythm` | Chord roots, key changes, bass line |
-| `:structural` | Rehearsal marks, tempo changes, texture shifts only |
+```
+pppp ppp pp p mp mf f ff fff ffff
+sfz sfp sffz fz rf rfz fp sf sff
+```
+
+## Articulations
+
+```
+staccato staccatissimo tenuto accent marcato
+portato stress fermata breath caesura
+```
+
+## Ornaments
+
+```
+trill mordent mordent-inverted
+turn turn-inverted tremolo
+arpeggio glissando
+```

@@ -1,13 +1,15 @@
 ---
 title: "Orchestrator Contract"
-description: "The single-writer orchestrator pattern: edit lanes, transaction model, merge semantics, and checkpoint enforcement."
+description: "Validation, transactions, conflict detection, and the single-writer pattern."
 ---
 
-## Overview
+The orchestrator is the central coordinator that makes AI-driven composition safe and reliable at scale. It maintains the canonical score state and mediates all agent operations through progressive validation and typed operations.
 
-The orchestrator is the central coordinator that makes AI-driven composition safe and reliable at scale. It maintains the canonical score state and mediates all agent operations through a disciplined transaction model.
+**Core principle**: Agents read MRS-S; agents write MRS-Ops. Only the orchestrator applies changes to canonical state.
 
-**Core principle**: Multiple agents can work in parallel, but only the orchestrator commits changes to the canonical score. This gives you multi-agent power without multi-writer chaos.
+See: [`/MRS-Specification-RFC#12-orchestrator-contract`](/MRS-Specification-RFC#12-orchestrator-contract)
+
+## Orchestrator Architecture
 
 ```
          ORCHESTRATOR (owns canonical MRS-S state)
@@ -20,460 +22,249 @@ The orchestrator is the central coordinator that makes AI-driven composition saf
     └───────────┴───────────┴───────────┘
                 │
          Working Set Envelopes
-         (scoped MRS-S + lanes)
+         (scoped MRS-S + context views + lane bundles)
 ```
 
----
+## Orchestrator Responsibilities
+
+| Responsibility | Description |
+|----------------|-------------|
+| **UUID minting** | Maps tmp-ids to UUIDs; sole authority for ID creation |
+| **Derived fields** | Computes `:beat-start`, `:at`, reconciles inherited state |
+| **Progressive validation** | Validates operations in stages before application |
+| **State management** | Maintains canonical MRS-S; applies validated changes |
+| **Context generation** | Creates task-adaptive context views |
+| **Conflict detection** | Uses source-hash to detect concurrent modifications |
+| **Audit trail** | Records all changes with attribution |
 
 ## Edit Lanes
 
-Edit lanes are capability boundaries that determine what an agent is allowed to modify. They enable **safe parallel work**: agents with disjoint lanes can edit the same measures without conflict.
+Lanes are permission boundaries that determine what an agent may modify.
 
-### v1 Lane Set
+| Lane | Owns |
+|------|------|
+| `structure` | Measure list, sections, movements |
+| `temporal` | Tempo map, time signatures |
+| `harmonyPlan` | Chord symbols, harmonic analysis |
+| `notes` | Pitches, durations, rests |
+| `expression` | Dynamics, hairpins, slurs |
+| `technique` | Articulations, playing techniques |
+| `lyrics` | Lyrics, syllables |
 
-| Lane | Owns | Description |
-|------|------|-------------|
-| `structure` | Measure list, sections, repeats, movements | Creating/deleting/reordering measures |
-| `temporal` | Tempo map, time signatures, metric modulations | Global timing that affects absolute positions |
-| `harmonyPlan` | Chord symbols, harmonic rhythm, key areas | The "mental harmonic structure" layer |
-| `notes` | Pitches, durations, rests, voice assignment | Core musical content |
-| `expression` | Dynamics, hairpins, slurs, expressive text | Phrasing and dynamics |
-| `technique` | Articulations, playing techniques | Performance instructions |
-| `lyricsText` | Lyrics, syllables, underlay | Vocal text and alignment |
+### What Each Lane Controls
 
-### Lane Ownership Rules
+| Lane | Can Create/Modify | Cannot Touch |
+|------|-------------------|--------------|
+| `structure` | Measures, sections, movements, repeats | Event content |
+| `temporal` | Tempo, time signatures, metric modulations | Notes, spans |
+| `harmonyPlan` | Chord symbols, key areas, harmonic rhythm | Note pitches |
+| `notes` | Pitches, durations, rests, voice assignment | Dynamics, slurs |
+| `expression` | Dynamics, hairpins, slurs, phrasing | Pitches, technique |
+| `technique` | Articulations, playing techniques, ornaments | Pitches, dynamics |
+| `lyrics` | Lyric text, syllabification, alignment | Pitches |
 
-Each object type and field is owned by exactly one lane. If an agent modifies a field outside its granted lanes, the orchestrator rejects the change.
+## Lane Bundles
 
-#### Structure Lane
-| Object | Fields |
-|--------|--------|
-| Score structure | movements, sections, rehearsal anchors, ordering |
-| Measure header | `:id`, measure ordering, repeats |
-| Display numbers | `:number` (orchestrator-only, derived) |
-
-#### Temporal Lane
-| Object | Fields |
-|--------|--------|
-| Meter map | time signatures, beat groupings |
-| Tempo map | tempo marks, accel/rit as tempo events |
-| Derived timing | `:beat-start`, `:sec-start` (orchestrator recomputes) |
-
-#### HarmonyPlan Lane
-| Object | Fields |
-|--------|--------|
-| Harmony events | chord symbols, Roman numerals, harmonic rhythm grid |
-| Key area spans | modulation regions, tonicizations |
-
-#### Notes Lane
-| Object | Fields |
-|--------|--------|
-| Note/rest events | pitch, duration, onset beat, tie flags |
-| Voice assignment | voice number (local per measure) |
-| Tuplet groupings | tuplet ratios, grouping membership |
-
-#### Expression Lane
-| Object | Fields |
-|--------|--------|
-| Dynamic marks | `pp..ff`, sfz, etc. |
-| Hairpins | crescendo/decrescendo spans |
-| Slurs | phrasing slurs (v1 decision: slurs are expression) |
-| Expressive text | "dolce", "espressivo", etc. |
-
-#### Technique Lane
-| Object | Fields |
-|--------|--------|
-| Articulations | staccato, tenuto, accent, marcato |
-| Technique text | pizz, arco, con sord, sul pont |
-| Technique spans | extended technique regions |
-
-#### LyricsText Lane
-| Object | Fields |
-|--------|--------|
-| Lyric tokens | text, syllable, hyphenation, verse index |
-| Lyric attachments | lyric-to-note event mappings |
-
----
-
-## Scope Grants
-
-A Working Set Envelope carries an explicit **scope grant** that defines what the agent may modify. The scope grant is the intersection of:
-
-- **WHERE**: Region (measure IDs, part IDs, optionally voice selectors)
-- **WHAT**: Lanes (which semantic categories)
-- **HOW**: Allowed operations
-
-### Scope Grant Schema
+Common workflows grant multiple related lanes:
 
 ```clojure
-(working-set
-  :version 1.0
-  :source-hash "sha256:..."
-  
-  ;; WHERE: region targeting
-  :scope
-    (:measures #uuid "018c3f40-002d-..." #uuid "018c3f40-0034-...")
-    (:parts [clarinet-1 clarinet-2])
-    (:voices [v1])  ; optional refinement
-  :display-hint (:measures 45 52)
-  
-  ;; WHAT: lane permissions
-  :lanes [notes expression]
-  
-  ;; HOW: allowed operations
-  :allowed-ops [upsert-event delete-event upsert-span delete-span]
-  
-  ;; Locked regions (read-only constraints)
-  :locks
-    ((structure :scope :all)           ; form is locked
-     (temporal :scope :all)            ; tempo map locked
-     (harmonyPlan :measures #uuid "..." #uuid "..."))  ; harmony locked for this section
-  
-  ;; Preconditions for conflict detection
-  :base-revision "rev:abc123"
-  
-  :content ...)
+(define-bundle orchestrate
+  :lanes [notes expression technique]
+  :description "Full orchestration pass")
+
+(define-bundle dynamics-pass
+  :lanes [expression]
+  :description "Dynamics and phrasing")
+
+(define-bundle notation-cleanup
+  :lanes [notes technique]
+  :description "Fix notation issues")
+
+(define-bundle full-compose
+  :lanes [structure temporal harmonyPlan notes expression technique]
+  :description "Full compositional control")
+
+(define-bundle lyrics-pass
+  :lanes [lyrics]
+  :description "Lyric writing and alignment")
 ```
 
-### Enforcement Rule
+### Bundle Selection by Task Type
 
-If an agent returns changes outside its grant, the orchestrator MUST either:
-1. **Reject** the entire response, or
-2. **Strip** the out-of-scope changes and apply only valid changes (with warning)
+| Task Type | Recommended Bundle |
+|-----------|-------------------|
+| Compose melody | `notes` or `full-compose` |
+| Add countermelody | `orchestrate` |
+| Orchestrate sketch | `orchestrate` |
+| Add dynamics | `dynamics-pass` |
+| Shape phrases (slurs) | `expression` |
+| Add articulations | `technique` |
+| Write lyrics | `lyrics-pass` |
+| Fix notation | `notation-cleanup` |
 
-The choice is implementation-defined, but behavior MUST be deterministic.
+## Progressive Validation
 
----
+Operations are validated in stages before application:
+
+```
+┌─────────────┐   ┌─────────────┐   ┌─────────────┐   ┌─────────────┐
+│   Syntax    │ → │ References  │ → │ Permissions │ → │  Musical    │
+│ Validation  │   │ Validation  │   │ Validation  │   │  Rules      │
+└─────────────┘   └─────────────┘   └─────────────┘   └─────────────┘
+                                                              │
+                                                              ▼
+                                                      ┌─────────────┐
+                                                      │ Application │
+                                                      └─────────────┘
+```
+
+### Stage 1: Syntax Validation
+- Operation is well-formed
+- Required fields present
+- Types correct
+
+### Stage 2: Reference Validation
+- All referenced UUIDs exist in source
+- All tmp-ids are unique within envelope
+- Cross-references between ops are valid
+
+### Stage 3: Permission Validation
+- Operation within granted lanes
+- Operation within granted scope
+- Operation type is allowed
+
+### Stage 4: Musical Rule Validation
+- Constraints satisfied (range, avoid parallel fifths)
+- Duration sums correct
+- Ties connect same pitches
+
+See: [`/MRS-Specification-RFC#13-progressive-validation`](/MRS-Specification-RFC#13-progressive-validation)
+
+## Conflict Detection
+
+The orchestrator uses source-hash to detect concurrent modifications:
+
+```
+1. Working Set created with source-hash H1
+2. Agent produces operations (takes time)
+3. Meanwhile, another agent modifies the score
+4. Before applying, orchestrator checks current hash
+5. Current hash ≠ H1 → conflict detected
+```
+
+### Conflict Resolution Options
+
+| Option | When to Use |
+|--------|-------------|
+| **Reject** | Default safe behavior; agent must retry with fresh envelope |
+| **Rebase** | If operations can be transformed to apply on new state |
+| **Merge** | If changes are in disjoint regions/lanes |
 
 ## Transaction Model
 
-Even though agents return MRS-S fragments (not explicit operations), the orchestrator internally converts each response into a **typed change-set** for safe processing.
-
-### Why Typed Change-Sets?
-
-- **Lane enforcement**: Validate that changes stay within granted lanes
-- **Layered merges**: Apply changes from multiple agents to the same region
-- **Human review**: Generate intelligible diffs
-- **Audit trail**: Track what changed, when, by whom
-- **Rollback**: Revert specific change-sets if needed
-
-### Change-Set Structure (MRS-S serialization)
+Every change is recorded:
 
 ```clojure
-(changeset
-  :id #uuid "019a1b2c-..."
-  :agent "orchestration-agent"
-  :created "2025-01-08T21:00:00Z"
-  :base-revision "rev:abc123"
-  
-  :scope-grant
-    (:measures #uuid "..." #uuid "...")
-    (:parts [violin-1 violin-2])
-    (:lanes [notes expression])
-    (:allowed-ops [upsert-event delete-event upsert-span])
-  
-  :preconditions
-    ((measure #uuid "..." :hash "sha256:...")
-     (measure #uuid "..." :hash "sha256:..."))
-  
-  :ops
-    ((upsert-event 
-       :id #uuid "019a1b30-..." 
-       :measure #uuid "018c3f40-002d-..."
-       :part violin-1
-       :data (: 0 G5.q :dyn f :at 487+1/4))
-     (delete-event :id #uuid "018c3f2a-...")
-     (upsert-span
-       :id #uuid "019a1b35-..."
-       :type slur
-       :from #uuid "019a1b30-..."
-       :to #uuid "019a1b32-..."))
-  
-  :validation
-    (:level standard
-     :errors []
-     :warnings [])
-  
-  :human-review
-    (:required false
-     :status :auto-approved))
+(transaction
+  :id #uuid "..."
+  :timestamp "2026-01-17T10:30:00Z"
+  :agent "countermelody-agent"
+  :source-hash "sha256:..."
+  :result-hash "sha256:..."
+  :ops-applied 6
+  :scope (:measures #uuid "..." #uuid "..." :instruments [clarinet-bb])
+  :bundle orchestrate)
 ```
 
-### Operation Types
-
-#### Content Operations (lane-checkable)
-| Operation | Description |
-|-----------|-------------|
-| `upsert-event` | Create or update event by `:id` |
-| `delete-event` | Remove event by `:id` |
-| `upsert-span` | Create or update span by `:id` |
-| `delete-span` | Remove span by `:id` |
-| `set-attr` | Modify specific field (only within lane ownership) |
-
-#### Structure Operations (orchestrator-gated)
-| Operation | Description | Review |
-|-----------|-------------|--------|
-| `insert-measures` | Insert new measures after specified ID | Required |
-| `delete-measures` | Remove measures by ID | Required |
-| `split-measure` | Divide measure at beat position | Required |
-| `merge-measures` | Combine adjacent measures | Required |
-
-#### Special Operations (orchestrator-mediated)
-| Operation | Description | Review |
-|-----------|-------------|--------|
-| `span-repair` | Adjust span endpoints across scope boundaries | Recommended |
-| `lyrics-alignment-repair` | Adjust notes for lyric underlay | Recommended |
-| `normalize-voices` | Renumber voices for canonical form | Orchestrator-only |
-
----
-
-## Layered Merge Policy
-
-When multiple agents edit the same region, the orchestrator applies a **layered merge** based on lane disjointness.
-
-### Auto-Merge Allowed When ALL True
-
-1. Target measures/parts may overlap
-2. **Lanes are disjoint** (no lane appears in both change-sets)
-3. Operations do not touch the same object IDs
-4. No structure/temporal operations (or they are already committed)
-
-### Hard Conflict When ANY True
-
-1. Same lane touches same object ID
-2. Structure changed (measures inserted/deleted) and change-set wasn't rebased
-3. Span edits would alter out-of-scope endpoints
-
-### Merge Order (Deterministic)
-
-When multiple change-sets are eligible for merge, apply in this order:
-
-1. **Structure** operations first (if any)
-2. **Temporal** operations (triggers timing recomputation)
-3. **HarmonyPlan** operations
-4. **Notes** operations
-5. **Expression** operations
-6. **Technique** operations
-7. **LyricsText** operations
-
-This ordering reduces conflict likelihood and matches natural compositional workflow.
-
-### Conflict Resolution
-
-When a conflict is detected:
-
-1. **Reject and regenerate**: Deny the conflicting change-set, provide fresh WSE
-2. **Human review**: Route to human for manual resolution
-3. **Last-writer-wins** (optional, configuration): For non-critical fields only
-
-Default behavior: reject and regenerate.
-
----
+Transactions enable:
+- **Audit trail**: Who changed what, when
+- **Rollback**: Revert to previous state
+- **Replay**: Reconstruct state from transactions
 
 ## Checkpoints and Locks
 
-For iterative symphony-from-scratch workflows, the orchestrator supports **checkpoints** that lock specific lanes or regions.
-
-### Lock Types
-
-| Lock | Scope | Effect |
-|------|-------|--------|
-| `form-locked` | `structure` lane, all measures | No measure insert/delete/reorder |
-| `tempo-locked` | `temporal` lane, all measures | No tempo/meter changes |
-| `harmony-locked` | `harmonyPlan` lane, by section | No chord changes in locked region |
-| `orchestration-locked` | `notes` lane, by part/section | No note changes in locked region |
-| `expression-locked` | `expression` lane, by section | No dynamics changes |
-
-### Lock Declaration
+Lock approved decisions to prevent regression:
 
 ```clojure
 (checkpoint
-  :id "movement-1-form-approved"
-  :created "2025-01-08T20:00:00Z"
-  :approved-by "human"
-  
+  :id "harmony-approved"
+  :created "2026-01-17T10:30:00Z"
+  :approved-by "composer"
   :locks
     ((structure :scope :all)
-     (temporal :scope :all)
-     (harmonyPlan :measures #uuid "..." #uuid "...")))
+     (harmonyPlan :scope :all)))
 ```
 
-### Enforcement
+After checkpoint:
+- Agents cannot modify locked lanes
+- Validation rejects operations that touch locked content
+- Human approval required to unlock
 
-When a scope grant is created, locked lanes/regions are excluded from `:allowed-ops` and included in `:locks` (read-only). Agents can see locked content but cannot modify it.
+### Typical Checkpoint Flow
 
----
+```
+1. Form sketched → checkpoint structure
+2. Harmony planned → checkpoint harmonyPlan
+3. Orchestration approved → checkpoint notes
+4. Final polish → no locks (expression, technique)
+```
 
-## Human Review Triggers
+## Operation Application
 
-The orchestrator routes certain operations to human review:
+When validation passes, the orchestrator applies operations:
+
+1. **Map tmp-ids to UUIDs** in deterministic order
+2. **Compute derived fields** (`:at`, `:beat-start`)
+3. **Update canonical MRS-S** state
+4. **Update structural index** if needed
+5. **Record transaction** in audit trail
+6. **Return result** with id-mapping
+
+### Application Order
+
+Operations are applied in the order received. Dependencies must be satisfied:
+- Create measure before creating events in it
+- Create events before creating spans that reference them
+
+The orchestrator MAY reorder to satisfy dependencies if unambiguous.
+
+## Partial Application
+
+When some operations fail validation:
+
+```clojure
+(mrs-ops-result
+  :status partial
+  :applied 4
+  :rejected 2
+  :id-mapping (...)
+  :errors
+    ((error :op 5 :code MUSIC-001 :message "Tie connects different pitches")
+     (error :op 6 :code REF-001 :message "Span references non-existent tmp-id")))
+```
+
+Policy options:
+- **All-or-nothing**: Reject entire batch if any operation fails
+- **Partial**: Apply valid operations, return errors for invalid
+- **Interactive**: Pause for human decision on errors
+
+## Human Review Gates
+
+Certain operations trigger human review:
 
 | Trigger | Reason |
 |---------|--------|
-| `structure` operations | Form changes are foundational |
-| `temporal` operations | Affects all absolute timing |
-| `span-repair` operations | Cross-boundary span safety |
-| `lyrics-alignment-repair` | Modifies notes for lyrics |
-| Conflicts involving same lane + object | Cannot auto-resolve |
-| Changes to locked checkpoints | Requires unlock approval |
+| Structure changes | Form is foundational |
+| Temporal changes | Affects all timing |
+| Locked lane touched | Checkpoint protection |
+| Conflict detected | Cannot auto-resolve |
 
-### Review Response
+Human approval is recorded:
 
 ```clojure
 (human-review
-  :changeset-id #uuid "019a1b2c-..."
-  :status :approved   ; or :rejected, :modified
+  :transaction-id #uuid "..."
+  :status approved
   :reviewer "composer"
-  :timestamp "2025-01-08T21:30:00Z"
-  :notes "Approved dynamics changes, adjusted hairpin endpoint")
+  :notes "Approved with minor adjustment")
 ```
-
----
-
-## Voice Identity Policy
-
-Voices are **local per measure** (and per part). Voice `v1` in measure 45 has no inherent connection to `v1` in measure 46.
-
-### Rationale
-
-- "Voice 1/2" is a notation device for local polyphony, not a stable musical entity
-- Polyphony comes and goes; voices split/merge constantly
-- Global voice IDs create hard identity problems during re-voicing
-
-### Continuity Representation
-
-If you need to track a melodic line across measures:
-- Use **spans** (which you already have) to link events
-- Use an optional **line ID** annotation for extended continuity
-- Do NOT overload voice number for this purpose
-
-### Orchestrator Normalization
-
-The orchestrator MAY renumber voices for canonical form (e.g., always `v1` before `v2`) as long as musical content is preserved.
-
----
-
-## HarmonyPlan Layer
-
-The HarmonyPlan is an **embedded optional layer** within the canonical MRS-S score, not a separate document.
-
-### Rationale
-
-- **Prevents drift**: If separate, alignment bugs occur on every structural change
-- **Supports iteration**: Early stages have "plan without notes"—keeping it in the same document enables unified checkpointing
-- **Still modular**: It's a separate lane with its own permissions
-
-### HarmonyPlan Structure
-
-```clojure
-(harmony-plan
-  :id #uuid "..."
-  
-  ;; Chord events attached to measures
-  (harmony-event
-    :measure #uuid "018c3f40-0001-..."
-    :beat 0
-    :chord Cm
-    :function i
-    :id #uuid "...")
-  
-  (harmony-event
-    :measure #uuid "018c3f40-0005-..."
-    :beat 0
-    :chord Fm
-    :function iv
-    :id #uuid "...")
-  
-  ;; Key area spans
-  (key-area
-    :id #uuid "..."
-    :from-measure #uuid "018c3f40-0001-..."
-    :to-measure #uuid "018c3f40-0020-..."
-    :key C :mode minor))
-```
-
-### ChordPro Import
-
-ChordPro files are one source for HarmonyPlan:
-- Import ChordPro → generate HarmonyPlan events
-- Link to measures by stable IDs
-- Human or agent can also create/modify HarmonyPlan directly
-
----
-
-## Cross-Lane Operations
-
-Some operations inherently cross lane boundaries. These require explicit orchestrator mediation.
-
-### Span Repair
-
-When a span (slur, hairpin) crosses the working set boundary, agents cannot directly modify out-of-scope endpoints.
-
-```clojure
-(span-repair
-  :span-id #uuid "018c3f2c-..."
-  :requested-change
-    (:extend-to #uuid "019a1b40-...")  ; new endpoint
-  :justification "Phrase extends through measure 56"
-  :evidence (:current-endpoint #uuid "018c3f2b-..." :beat 3))
-```
-
-The orchestrator:
-1. Validates the request is musically reasonable
-2. Acquires necessary scope (if endpoint is accessible)
-3. Applies the change or routes to human review
-
-### Lyrics Alignment Repair
-
-Lyrics may need note splits for proper syllable placement:
-
-```clojure
-(lyrics-alignment-repair
-  :region (:measures #uuid "..." #uuid "..." :part soprano)
-  :requested-changes
-    ((split-note :id #uuid "..." :at-beat 2.5)
-     (attach-lyric :lyric-id #uuid "..." :to-note #uuid "..."))
-  :justification "Melisma requires note split for syllable 'glo-'")
-```
-
-The orchestrator:
-1. Validates the request
-2. Applies `notes`-lane changes + `lyricsText`-lane attachments
-3. Routes to human review if rhythmic structure changes significantly
-
----
-
-## Implementation Model
-
-The orchestrator maintains:
-
-1. **Canonical MRS-S** — The source of truth (internal structured model, serializable to MRS-S)
-2. **Change-set log** — Typed operations for audit/rollback
-3. **Lock state** — Active checkpoints and their scopes
-4. **Pending reviews** — Operations awaiting human approval
-
-### Runtime vs Serialization
-
-- **Runtime**: Internal structured model for fast queries, invariant enforcement, transaction application
-- **Serialization**: MRS-S for storage, interchange, and agent I/O
-
-The invariant: `serialize(parse(mrs_s)) == normalize(mrs_s)`
-
-Conformance is defined by observable behavior, not internal representation.
-
----
-
-## Summary
-
-The orchestrator contract provides:
-
-| Capability | Mechanism |
-|------------|-----------|
-| Safe parallel editing | Edit lanes + disjoint merge |
-| Structural stability | UUID identity + lane isolation |
-| Iterative workflow | Checkpoints + locks |
-| Human oversight | Review triggers + approval gates |
-| Audit trail | Typed change-sets |
-| Cross-boundary safety | Span repair + mediated operations |
-
-This is the foundation that makes "symphony from scratch via AI conversation" feasible and reliable.

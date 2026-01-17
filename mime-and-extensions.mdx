@@ -3,23 +3,29 @@ title: "MIME Types and File Extensions"
 description: "Standard MIME types and file extensions for MRS documents."
 ---
 
-See: [`/MRS-Specification-RFC#14-mime-types-and-file-extensions`](/MRS-Specification-RFC#14-mime-types-and-file-extensions)
+See: [`/MRS-Specification-RFC#16-mime-types-and-file-extensions`](/MRS-Specification-RFC#16-mime-types-and-file-extensions)
 
 ## MIME Types
 
 | Format | MIME Type |
 |--------|-----------|
 | MRS-S | `application/vnd.mrs+sexpr` |
-| Working Set Envelope | `application/vnd.mrs+sexpr` |
+| MRS-Ops | `application/vnd.mrs-ops+sexpr` |
+| Working Set Envelope | `application/vnd.mrs-workset+sexpr` |
 
 ## File Extensions
 
-| Format | Extension |
-|--------|-----------|
-| MRS-S | `.mrs` or `.mrs-s` |
-| Working Set Envelope | `.mrs-work` (typically ephemeral) |
+| Format | Extension | Persistence |
+|--------|-----------|-------------|
+| MRS-S | `.mrs` or `.mrs-s` | Persisted (canonical storage) |
+| MRS-Ops | `.mrs-ops` | Typically ephemeral |
+| Working Set | `.mrs-workset` | Typically ephemeral |
 
-Note: Working Set Envelopes are typically not persisted to files—they exist as in-memory structures passed between orchestrator and agents.
+### Persistence Notes
+
+**MRS-S** is the only format intended for long-term storage. It represents the complete, archival-quality canonical state of a score.
+
+**MRS-Ops** and **Working Set Envelopes** exist as in-memory structures passed between orchestrator and agents. While they can be serialized for debugging or audit logs, they are not typically stored as files.
 
 ## Encoding
 

@@ -1,9 +1,9 @@
 ---
-title: "MRS-S Metadata & Parts"
-description: "Score-level metadata and part definitions in MRS-S."
+title: "MRS-S Metadata, Players & Instruments"
+description: "Score-level metadata, player definitions, and instrument specifications."
 ---
 
-See: [`/MRS-Specification-RFC#4-4-metadata-section`](/MRS-Specification-RFC#4-4-metadata-section) and [`/MRS-Specification-RFC#4-5-parts-section`](/MRS-Specification-RFC#4-5-parts-section)
+See: [`/MRS-Specification-RFC#4-mrs-s-the-canonical-storage-format`](/MRS-Specification-RFC#4-mrs-s-the-canonical-storage-format)
 
 ## Metadata Section
 
@@ -14,7 +14,7 @@ See: [`/MRS-Specification-RFC#4-4-metadata-section`](/MRS-Specification-RFC#4-4-
   :composers ["Ludwig van Beethoven"]
   :copyright "Public Domain"
   :created "1808"
-  :modified "2025-12-12T10:30:00Z"
+  :modified "2026-01-17T10:30:00Z"
   
   ; Score-wide defaults
   :key C :mode minor
@@ -35,45 +35,159 @@ See: [`/MRS-Specification-RFC#4-4-metadata-section`](/MRS-Specification-RFC#4-4-
 |-------|------|-------------|
 | `:subtitle` | string | Secondary title |
 | `:composers` | [string] | List of composer names |
+| `:arrangers` | [string] | List of arranger names |
+| `:copyright` | string | Copyright notice |
 | `:key` | pitch-class | Default key |
 | `:mode` | keyword | `major`, `minor`, `dorian`, etc. |
 | `:time` | fraction | Default time signature |
 | `:tempo` | integer | Default tempo in BPM |
 
-## Parts Section
+## Players Section
+
+Players represent performers who may play multiple instruments (doubling).
 
 ```clojure
-(parts
-  (part flute-1
-    :name "Flute 1"
-    :abbr "Fl. 1"
-    :staves [treble]
-    :section woodwinds
-    :range [C4 D7])
+(players
+  (player woodwind-2
+    :name "Flute 2 / Piccolo"
+    :instruments [flute-2 piccolo]
+    :default flute-2)
   
-  (part clarinet-bb
-    :name "Clarinet in B♭"
-    :abbr "Cl."
-    :staves [treble]
-    :section woodwinds
-    :transposition (down M2)
-    :range [D3 Bb6])
+  (player clarinet-1
+    :name "Clarinet 1"
+    :instruments [clarinet-bb clarinet-a]
+    :default clarinet-bb)
   
-  (part piano
-    :name "Piano"
-    :abbr "Pno."
-    :staves [treble bass]
-    :section keyboards
-    :staff-connect brace))
+  (player percussion-1
+    :name "Percussion 1"
+    :instruments [snare timpani triangle]
+    :default snare))
 ```
 
-### Part Attributes
+### Player Attributes
 
 | Attribute | Required | Description |
 |-----------|----------|-------------|
-| `:name` | YES | Full display name |
-| `:abbr` | YES | Abbreviated name |
-| `:staves` | YES | List of staff clefs |
-| `:section` | NO | Instrument family |
-| `:transposition` | NO | Transposition interval |
-| `:range` | NO | Playable range |
+| `:name` | YES | Display name |
+| `:instruments` | YES | List of instrument IDs this player uses |
+| `:default` | YES | Default/starting instrument |
+
+## Instruments Section
+
+Instruments are specific sound sources with fixed transposition and range.
+
+```clojure
+(instruments
+  (instrument flute-1
+    :name "Flute"
+    :abbr "Fl. 1"
+    :family woodwinds
+    :staves [treble]
+    :transposition none
+    :range [C4 D7])
+  
+  (instrument piccolo
+    :name "Piccolo"
+    :abbr "Picc."
+    :family woodwinds
+    :staves [treble]
+    :transposition (up P8)
+    :range [D5 C8])
+  
+  (instrument clarinet-bb
+    :name "Clarinet in Bb"
+    :abbr "Cl."
+    :family woodwinds
+    :staves [treble]
+    :transposition (down M2)
+    :range [E3 C7])
+  
+  (instrument piano
+    :name "Piano"
+    :abbr "Pno."
+    :family keyboards
+    :staves [treble bass]
+    :transposition none
+    :range [A0 C8]
+    :staff-connect brace))
+```
+
+### Instrument Attributes
+
+| Attribute | Required | Type | Description |
+|-----------|----------|------|-------------|
+| `:name` | YES | string | Full display name |
+| `:abbr` | YES | string | Abbreviated name |
+| `:family` | YES | keyword | Instrument family |
+| `:staves` | YES | [clef] | List of staff clefs |
+| `:transposition` | YES | interval/none | Transposition |
+| `:range` | NO | [pitch pitch] | Playable range |
+| `:staff-connect` | NO | keyword | `brace`, `bracket`, `line` |
+
+### Instrument Families
+
+```
+woodwinds brass strings percussion keyboards voices choir other
+```
+
+### Clef Values
+
+```
+treble      ; G clef, line 2
+bass        ; F clef, line 4  
+alto        ; C clef, line 3
+tenor       ; C clef, line 4
+treble-8va  ; G clef, octave up
+treble-8vb  ; G clef, octave down
+bass-8vb    ; F clef, octave down
+percussion  ; Neutral clef
+tab-6       ; 6-string tablature
+```
+
+### Transposition Specification
+
+```clojure
+none                  ; Concert pitch
+(up P8)               ; Sounds octave higher (piccolo)
+(down M2)             ; Sounds major 2nd lower (Bb clarinet)
+(down m3)             ; Sounds minor 3rd lower (A clarinet)
+(down P5)             ; Sounds perfect 5th lower (English horn)
+```
+
+## Percussion Kits
+
+```clojure
+(instrument drum-kit
+  :name "Drum Kit"
+  :abbr "Dr."
+  :family percussion
+  :staves [percussion]
+  :transposition none
+  :kit
+    ((kick :line -2 :notehead normal)
+     (snare :line 0 :notehead normal)
+     (hi-hat :line 2 :notehead x)
+     (crash :line 4 :notehead x-circle)))
+```
+
+### Kit Item Attributes
+
+| Attribute | Description |
+|-----------|-------------|
+| `:line` | Staff line position |
+| `:notehead` | Notehead type (normal, x, x-circle, diamond, etc.) |
+
+## Instrument Changes
+
+When a player switches instruments mid-score:
+
+```clojure
+(measure :id #uuid "..." :number 45
+  (woodwind-2
+    (instrument-change :to piccolo :beat 0)
+    (v1
+      (: 0 D6.q :id #uuid "...")
+      ...)))
+```
+
+The orchestrator handles transposition changes automatically.

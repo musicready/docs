@@ -1,270 +1,242 @@
 ---
 title: "Data Model"
-description: "The canonical model underlying MRS-S and Working Set Envelopes."
+description: "The semantic model underlying MRS-S and MRS-Ops."
 ---
 
-MRS-S and Working Set Envelopes serialize the same underlying data model. Working Sets simply extract a bounded subset of this model with context.
+MRS uses a unified semantic model expressed through two formats: MRS-S (storage) and MRS-Ops (mutation).
 
-See: [`/MRS-Specification-RFC#8-data-model`](/MRS-Specification-RFC#8-data-model)
+See: [`/MRS-Specification-RFC#11-data-model`](/MRS-Specification-RFC#11-data-model)
 
-## Core Entities
+## Core Type Hierarchy
 
 ```
 Score
-├── Metadata: Map<String, Value>
-├── Parts: OrderedMap<PartId, Part>
-├── Measures: OrderedMap<UUID, Measure>
-├── Spans: Set<Span>
-├── HarmonyPlan: HarmonyPlan (optional, embedded layer)
-├── Overlays: Set<Overlay> (optional)
-└── Layout: LayoutHints (optional)
+├── meta: Metadata
+├── players: List<Player>
+├── instruments: List<Instrument>
+├── measures: List<Measure> | movements: List<Movement>
+├── spans: List<Span>
+├── overlays: List<Overlay>?
+├── structural-index: StructuralIndex?
+└── alternatives: List<Alternative>?
+```
 
+## Player-Instrument-Staff Model
+
+MRS uses a three-level model for professional orchestration semantics.
+
+### Player
+
+```
+Player
+├── id: Identifier
+├── name: String
+├── instruments: List<InstrumentId>
+└── default: InstrumentId
+```
+
+A Player represents a performer who may play multiple instruments (doubling).
+
+```clojure
+(player woodwind-2
+  :name "Flute 2 / Piccolo"
+  :instruments [flute-2 piccolo]
+  :default flute-2)
+```
+
+### Instrument
+
+```
+Instrument
+├── id: Identifier
+├── name: String
+├── abbr: String
+├── family: InstrumentFamily
+├── staves: List<Clef>
+├── transposition: Interval | none
+├── range: [Pitch, Pitch]?
+├── kit: List<KitItem>?  ; percussion only
+└── staff-connect: ConnectType?
+```
+
+An Instrument is a specific sound source with fixed transposition and range.
+
+```clojure
+(instrument clarinet-bb
+  :name "Clarinet in Bb"
+  :abbr "Cl."
+  :family woodwinds
+  :staves [treble]
+  :transposition (down M2)
+  :range [E3 C7])
+```
+
+### Instrument Families
+
+```
+woodwinds brass strings percussion keyboards voices choir other
+```
+
+## Measure
+
+```
 Measure
-├── id: UUIDv7 (stable identity)
-├── number: PositiveInt (display property)
-├── beat-start: Rational (absolute position)
-├── sec-start: Float? (if tempo automation)
-├── time, key, tempo, rehearsal...
-└── content: Map<PartId, PartContent>
+├── id: UUIDv7              ; Stable identity
+├── number: Integer         ; Display number
+├── beat-start: Rational    ; Orchestrator-computed
+├── time: TimeSignature?    ; Inherits if omitted
+├── key: PitchClass?        ; Inherits if omitted
+├── mode: Mode?             ; Inherits if omitted
+├── tempo: Integer?         ; Inherits if omitted
+├── tempo-text: String?
+├── rehearsal: String?
+├── barline-left: BarlineType?
+├── barline-right: BarlineType?
+├── directions: List<Direction>
+└── content: Map<InstrumentId, InstrumentContent>
+```
 
+### Measure Identity
+
+- `:id` — Stable UUIDv7, survives structural changes
+- `:number` — Display only, can change on insert/delete
+- `:beat-start` — Orchestrator-computed, absolute position
+
+### Attribute Inheritance
+
+| Attribute | Inherits? |
+|-----------|-----------|
+| `:time` | Yes, until changed |
+| `:key`, `:mode` | Yes, until changed |
+| `:tempo`, `:tempo-text` | Yes, until changed |
+| `:rehearsal` | No (single-measure) |
+| `:barline-*` | No (per-measure) |
+
+## Event
+
+```
 Event
-├── id: UUIDv7 (stable identity)
-├── beat: Decimal (position in measure)
-├── at: Rational (absolute position)
-├── pitches: List<Pitch>
-├── duration: Duration
-└── properties: Map<String, Value>
+├── beat: Rational          ; Position within measure (0-indexed)
+├── pitch: PitchExpr        ; Pitch, chord, or rest
+├── id: UUIDv7              ; Stable identity
+├── dyn: Dynamic?
+├── art: Articulation?
+├── orn: Ornament?
+├── tech: Technique?
+├── lyrics: List<LyricSyllable>?
+├── grace: Boolean?
+├── cue: Boolean?
+├── cue-source: InstrumentId?
+└── ...other properties
+```
 
+### Event Position
+
+Events have structural position (beat within measure). The orchestrator computes absolute position:
+
+```
+event.:at = measure.:beat-start + event.beat
+```
+
+In MRS-S storage, `:at` is optional (can be computed). In MRS-Ops, agents provide `:beat`; orchestrator computes `:at`.
+
+### Pitch Expression
+
+| Type | Example | Description |
+|------|---------|-------------|
+| Single note | `C4.q` | C4 quarter note |
+| Chord | `[C4 E4 G4].q` | C major triad, quarter |
+| Rest | `r.q` | Quarter rest |
+
+## Span
+
+```
 Span
-├── id: UUIDv7 (stable identity)
-├── type: slur | tie | beam | hairpin | ...
-├── from: UUIDv7 (event reference)
-├── to: UUIDv7 (event reference)
-└── properties: Map<String, Value>
-
-HarmonyPlan
 ├── id: UUIDv7
-├── harmony-events: List<HarmonyEvent>
-└── key-areas: List<KeyAreaSpan>
+├── type: SpanType
+├── from: UUIDv7?           ; Start event (for from/to spans)
+├── to: UUIDv7?             ; End event (for from/to spans)
+├── events: List<UUIDv7>?   ; Event list (for beams)
+├── boundary-entry: Boolean?
+├── boundary-exit: Boolean?
+└── ...type-specific attributes
 ```
 
-See: [`/MRS-Specification-RFC#8-2-core-entities`](/MRS-Specification-RFC#8-2-core-entities)
+### Span Types
 
-## Invariants
+| Type | Endpoint Style | Description |
+|------|----------------|-------------|
+| `slur` | from/to | Phrasing slur |
+| `tie` | from/to | Tie between same pitches |
+| `hairpin` | from/to | Crescendo/diminuendo |
+| `beam` | events list | Beam grouping |
+| `ottava` | from/to | Octave transposition |
+| `pedal` | from/to | Piano pedal |
 
-1. **Unique identifiers**: No two measures, events, or spans share a UUID
-2. **Display numbers**: Measure numbers must be positive; may have gaps
-3. **Beat bounds**: Event beat positions must be ≥ 0 and < measure duration
-4. **Duration sum**: Voice durations should not exceed measure duration
-5. **Tie pitch match**: Tied notes must have identical pitch
-6. **Span validity**: Span endpoints must reference existing UUIDs
-7. **Voice consistency**: Events in a voice should not overlap temporally
-8. **UUID immutability**: Once assigned, an `:id` is immutable
-9. **Dual positioning**: Every event MUST have both `beat` and `:at`
-10. **Measure identity**: Every measure MUST have `:id` and `:number`
+### Span Immutability
 
-See: [`/MRS-Specification-RFC#8-3-invariants`](/MRS-Specification-RFC#8-3-invariants)
+Once created, span endpoints (`:from`, `:to`, `:events`) are immutable. To change endpoints, delete the span and create a new one.
 
-## Measure Identity
+## Identifier Rules
 
-Measures have dual identity:
+| Type | Format | Example |
+|------|--------|---------|
+| UUID | UUIDv7 | `#uuid "018c3f40-0001-..."` |
+| Instrument ID | `[a-z][a-z0-9-]*` | `clarinet-bb`, `flute-1` |
+| Player ID | `[a-z][a-z0-9-]*` | `woodwind-2` |
+| Voice ID | `v1`-`v4` or `:rh`/`:lh` | `v1`, `:rh` |
+| Tmp-ID | String starting with letter | `"e1"`, `"span-a"` |
+
+## Rational Numbers
+
+All temporal positions use exact rationals:
+
+```
+Canonical forms:
+  0, 1, 2, ...       ; Integers
+  2+1/2              ; Two and a half
+  0+1/3              ; One third
+  3+3/4              ; Three and three quarters
+
+NOT permitted:
+  2.5                ; Decimal
+  0.333              ; Decimal
+```
+
+Implementations MUST treat rationals as exact; no floating-point approximation.
+
+## Voices and Layers
+
+### Voices
+
+Independent melodic/rhythmic streams within an instrument:
+- `v1` through `v4` for single-staff instruments
+- `:rh`/`:lh` for keyboard instruments (then `v1`, `v2` within each)
+
+### Layers
+
+Same-rhythm sub-structure within a voice:
 
 ```clojure
-(measure 
-  :id #uuid "018c3f40-002d-7890-abcd-ef1234567890"  ; Stable identity
-  :number 45                                         ; Display property
-  :beat-start 487+1/4
-  ...)
+(v1
+  (layer 1
+    (: 0 C4.q :id #uuid "...") (: 1 D4.q :id #uuid "..."))
+  (layer 2
+    (: 0 E4.q :id #uuid "...") (: 1 F4.q :id #uuid "...")))
 ```
-
-- `:id` — Used for all internal references, survives insertions/deletions
-- `:number` — For human navigation only, can change
-
-See: [`/MRS-Specification-RFC#3-3-stable-identifiers`](/MRS-Specification-RFC#3-3-stable-identifiers)
-
-## Temporal Model
-
-MRS uses a **dual positioning model**:
-
-**Structural positioning** (measure-relative):
-- Beat 0 is the first beat of the measure
-- Used for human readability
-
-**Absolute positioning**:
-- `:at` — Rational quarter-notes since part start
-- `:sec` — Seconds since start (if tempo automation)
-- Used for validation and meter-agnostic reasoning
-
-All validation involving timing MUST use absolute positions.
-
-See: [`/MRS-Specification-RFC#8-4-temporal-model`](/MRS-Specification-RFC#8-4-temporal-model)
-
----
-
-## Voice Identity Policy
-
-**Voices are local per measure** (and per part). Voice `v1` in measure 45 has no inherent connection to `v1` in measure 46.
-
-### Rationale
-
-- "Voice 1/2" is a **notation device** for local polyphony, not a stable musical entity across an entire movement
-- Polyphony comes and goes; voices split and merge constantly in real music
-- Global/persistent voice IDs create hard identity problems during re-voicing operations (common in orchestration)
-- Keeping voices local dramatically simplifies merge logic
-
-### Voice Naming
-
-For single-staff parts:
-- `v1` through `v4` for independent voices
-- Voice `v1` is primary; higher numbers are secondary
-
-For multi-staff parts (piano, organ, harp):
-- `:rh` / `:lh` for right/left hand
-- Or `:staff1` / `:staff2` for numbered staves
-
-### Continuity Across Measures
-
-If you need to track a melodic line across measures:
-
-1. **Use spans** (which you already have) to link events across measures
-2. **Use an optional line ID annotation** for extended continuity
-
-```clojure
-(: 0 G5.q :id #uuid "..." :at 487+1/4 :line melody-a)
-```
-
-**Do NOT overload voice number for this purpose.** Voice is for notation layout; line/span is for musical continuity.
-
-### Orchestrator Normalization
-
-The orchestrator MAY renumber voices for canonical form (e.g., always `v1` before `v2` in output) as long as musical content is preserved. This is an implementation detail, not a semantic change.
-
----
 
 ## HarmonyPlan Layer
 
-The HarmonyPlan is an **embedded optional layer** within the canonical MRS-S score, not a separate document.
-
-### Rationale
-
-- **Prevents drift**: If HarmonyPlan were a separate document, alignment bugs would occur on every structural change (insert/delete measures)
-- **Supports iterative workflow**: Early stages often have "harmonic plan without notes"—keeping it in the same document enables unified checkpointing
-- **Still modular**: It's a separate edit lane (`harmonyPlan`) with its own permissions and locking
-
-### HarmonyPlan Structure
+The HarmonyPlan is an embedded optional layer for chord symbols and harmonic structure:
 
 ```clojure
 (harmony-plan
-  :id #uuid "019a1b2c-..."
-  
-  ;; Chord events attached to measures
-  (harmony-event
-    :id #uuid "019a1b30-..."
-    :measure #uuid "018c3f40-0001-..."
-    :beat 0
-    :chord Cm
-    :function i)
-  
-  (harmony-event
-    :id #uuid "019a1b31-..."
-    :measure #uuid "018c3f40-0005-..."
-    :beat 0
-    :chord Fm
-    :function iv)
-  
-  (harmony-event
-    :id #uuid "019a1b32-..."
-    :measure #uuid "018c3f40-0009-..."
-    :beat 0
-    :chord G7
-    :function V7)
-  
-  ;; Key area spans
-  (key-area
-    :id #uuid "019a1b40-..."
-    :from-measure #uuid "018c3f40-0001-..."
-    :to-measure #uuid "018c3f40-0020-..."
-    :key C :mode minor)
-  
-  (key-area
-    :id #uuid "019a1b41-..."
-    :from-measure #uuid "018c3f40-0021-..."
-    :to-measure #uuid "018c3f40-0040-..."
-    :key Eb :mode major))
+  (region :measures #uuid "..." #uuid "..."
+    (chord :beat 0 :symbol Cm :function i)
+    (chord :beat 2 :symbol Fm :function iv)))
 ```
 
-### HarmonyPlan Fields
-
-#### Harmony Events
-| Field | Required | Description |
-|-------|----------|-------------|
-| `:id` | Yes | Stable identifier |
-| `:measure` | Yes | UUID of the measure |
-| `:beat` | Yes | Beat position within measure |
-| `:chord` | Yes | Chord symbol (e.g., `Cm`, `G7`, `Bbmaj7`) |
-| `:function` | No | Roman numeral / functional analysis |
-| `:bass` | No | Bass note if different from root |
-
-#### Key Area Spans
-| Field | Required | Description |
-|-------|----------|-------------|
-| `:id` | Yes | Stable identifier |
-| `:from-measure` | Yes | Start measure UUID |
-| `:to-measure` | Yes | End measure UUID |
-| `:key` | Yes | Key center |
-| `:mode` | Yes | major, minor, dorian, etc. |
-
-### ChordPro Import
-
-ChordPro files are one source for HarmonyPlan:
-
-1. Import ChordPro → parse chord symbols and positions
-2. Generate HarmonyPlan events with new UUIDs
-3. Link to measures by stable IDs (requires measure mapping)
-
-HarmonyPlan can also be:
-- Created manually by a human
-- Inferred by an analysis agent from existing notes
-- Progressively refined during composition
-
-### HarmonyPlan and Notes Independence
-
-HarmonyPlan events can exist **without corresponding notes**:
-
-```clojure
-;; Valid: harmony plan exists, notes are TBD
-(harmony-plan
-  (harmony-event :measure #uuid "..." :chord Cm :function i))
-
-(measures
-  (measure :id #uuid "..."
-    (placeholder :parts [piano] :intent :accompaniment)))
-```
-
-This supports the natural workflow: plan harmony first, orchestrate later.
-
----
-
-## Edit Lane Ownership
-
-Each field in the data model is owned by exactly one edit lane:
-
-| Entity | Field | Lane |
-|--------|-------|------|
-| Measure | `:id`, ordering | `structure` |
-| Measure | `:number` | orchestrator-only (derived) |
-| Measure | `:beat-start`, `:sec-start` | orchestrator-only (derived) |
-| Measure | `:time` | `temporal` |
-| Measure | `:tempo`, `:tempo-text` | `temporal` |
-| Measure | `:key`, `:mode` | `temporal` |
-| Event | pitch, duration, beat, voice | `notes` |
-| Event | `:at` | orchestrator-only (derived) |
-| Event | `:dyn` | `expression` |
-| Event | `:art` | `technique` |
-| Event | `:lyrics` | `lyricsText` |
-| Span (slur) | all | `expression` |
-| Span (hairpin) | all | `expression` |
-| Span (technique) | all | `technique` |
-| HarmonyPlan | all | `harmonyPlan` |
-
-See: [Orchestrator Contract - Lane Ownership](/orchestrator-contract#edit-lanes) for the complete ownership matrix.
+This enables:
+- Composing harmony before notes
+- Validating notes against harmony
+- Extracting harmonic context for agents

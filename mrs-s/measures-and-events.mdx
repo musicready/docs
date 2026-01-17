@@ -1,90 +1,269 @@
 ---
 title: "MRS-S Measures & Events"
-description: "Measures with UUID identity, voices/layers, beat-position events, pitch/duration, and event properties."
+description: "Measure structure and event syntax in MRS-S."
 ---
 
-See: [`/MRS-Specification-RFC#4-6-measures-section`](/MRS-Specification-RFC#4-6-measures-section) and [`/MRS-Specification-RFC#4-8-event-syntax`](/MRS-Specification-RFC#4-8-event-syntax)
+See: [`/MRS-Specification-RFC#4-mrs-s-the-canonical-storage-format`](/MRS-Specification-RFC#4-mrs-s-the-canonical-storage-format)
 
-## Measure Structure
-
-Every measure has both UUID identity and display number:
+## Measures Section
 
 ```clojure
-(measure 
-  :id #uuid "018c3f40-002d-7890-abcd-ef1234567890"  ; Stable identity
-  :number 45                                         ; Display property
-  :beat-start 487+1/4                                ; Absolute position
-  :time 4/4
-  :key C :mode minor
-  
-  (violin-1
-    (v1
-      (: 0 G5.q :dyn f :id #uuid "018c3f2a-..." :at 487+1/4)
-      (: 1 A5.e :id #uuid "018c3f2b-..." :at 488+1/4)
-      ...)))
+(measures
+  (measure 
+    :id #uuid "018c3f40-0001-7890-abcd-ef1234567890"
+    :number 1
+    :beat-start 0
+    :time 4/4
+    :key C :mode minor
+    :tempo 120
+    
+    (flute-1
+      (v1
+        (: 0 C5.q :id #uuid "018c3f2a-0001-...")
+        (: 1 D5.q :id #uuid "018c3f2a-0002-...")
+        (: 2 E5.h :id #uuid "018c3f2a-0003-...")))
+    
+    (clarinet-bb
+      (v1
+        (: 0 r.w :id #uuid "018c3f2a-0010-...")))))
 ```
 
-### Required Measure Attributes
+### Measure Attributes
 
-| Attribute | Description |
-|-----------|-------------|
-| `:id` | Stable UUIDv7 identifier |
-| `:number` | Display number (1-indexed) |
-| `:beat-start` | Absolute beat position |
+| Attribute | Required | Type | Description |
+|-----------|----------|------|-------------|
+| `:id` | YES | UUIDv7 | Stable identifier |
+| `:number` | YES | integer | Display number (can have gaps) |
+| `:beat-start` | YES | rational | Absolute beat position (orchestrator-computed) |
+| `:time` | NO | fraction | Time signature (inherits if omitted) |
+| `:key` | NO | pitch-class | Key signature (inherits if omitted) |
+| `:mode` | NO | keyword | Mode (inherits if omitted) |
+| `:tempo` | NO | integer | Tempo in BPM (inherits if omitted) |
+| `:tempo-text` | NO | string | Tempo marking text |
+| `:rehearsal` | NO | string | Rehearsal mark |
+| `:barline-left` | NO | keyword | Left barline type |
+| `:barline-right` | NO | keyword | Right barline type |
 
-### Optional Measure Attributes
+### Attribute Inheritance
 
-| Attribute | Description |
-|-----------|-------------|
-| `:sec-start` | Absolute seconds (required if tempo automation) |
-| `:time` | Time signature change |
-| `:key`, `:mode` | Key signature change |
-| `:tempo` | Tempo change |
-| `:rehearsal` | Rehearsal mark |
+| Attribute | Inherits? |
+|-----------|-----------|
+| `:time` | Yes, until changed |
+| `:key`, `:mode` | Yes, until changed |
+| `:tempo`, `:tempo-text` | Yes, until changed |
+| `:rehearsal` | No (single-measure) |
+| `:barline-*` | No (per-measure) |
+
+### Barline Types
+
+```
+none single double final
+repeat-start repeat-end repeat-both
+```
+
+## Instrument Content
+
+Within a measure, content is organized by instrument:
+
+```clojure
+(measure :id #uuid "..." :number 1
+  (flute-1
+    (v1 ...))
+  
+  (clarinet-bb
+    (v1 ...)
+    (v2 ...))
+  
+  (piano
+    (:rh (v1 ...))
+    (:lh (v1 ...))))
+```
+
+### Voice Naming
+
+| Instrument Type | Voice Names |
+|-----------------|-------------|
+| Single-staff | `v1` through `v4` |
+| Keyboard | `:rh`/`:lh` containing `v1`, `v2`, etc. |
 
 ## Event Syntax
 
 ```clojure
-(: <beat> <pitch-expr> <properties>*)
+(: <beat> <pitch-expr> :id <uuid> <properties>*)
 ```
 
-Every event MUST have `:id` and `:at`:
+| Component | Description |
+|-----------|-------------|
+| `:` | Event marker |
+| `<beat>` | Beat position within measure (0-indexed, rational) |
+| `<pitch-expr>` | Pitch, chord, or rest |
+| `:id` | Stable UUIDv7 identifier (REQUIRED) |
+| `<properties>` | Optional `:keyword value` pairs |
+
+### Examples
 
 ```clojure
-(: 0 C5.q 
-  :id #uuid "018c3f2a-1234-7890-abcd-ef1234567890"
-  :at 487+1/4
-  :dyn p)
+(: 0 C5.q :id #uuid "...")           ; C5 quarter on beat 0
+(: 1 Eb4.e :id #uuid "..." :dyn f)   ; Eb4 eighth on beat 1, forte
+(: 2+1/2 [C4 E4 G4].q :id #uuid "...") ; Chord on beat 2.5
+(: 3 r.q :id #uuid "...")            ; Quarter rest on beat 3
 ```
 
-### Pitch Expression
+### Beat Position
+
+Beat positions are **exact rationals** relative to measure start (0-indexed):
+
+```
+4/4 time:
+  0      = Beat 1 (downbeat)
+  1      = Beat 2
+  2      = Beat 3
+  3      = Beat 4
+  0+1/2  = "And" of beat 1
+  1+3/4  = Fourth sixteenth of beat 2
+
+6/8 time (compound):
+  0      = Downbeat
+  1      = Dotted quarter 2
+  0+1/3  = First eighth subdivision
+```
+
+**Canonical form**: Use integers for whole beats, mixed numbers for fractions:
+- `0`, `1`, `2` (integers)
+- `2+1/2` (two and a half)
+- `0+1/3` (one third)
+
+Decimal literals (`2.5`) are NOT permitted.
+
+## Pitch Expression
+
+### Single Note
 
 ```clojure
 C4.q        ; C4 quarter note
 Eb5.h       ; E-flat 5 half note
-[C4 E4 G4].q  ; C major triad
-r.q         ; Quarter rest
+F#3.e       ; F-sharp 3 eighth note
+Bbb4.w      ; B double-flat 4 whole note
+Cx4.s       ; C double-sharp 4 sixteenth note
 ```
 
-### Duration Codes
+### Chord
 
-| Code | Duration | Beats |
-|------|----------|-------|
+```clojure
+[C4 E4 G4].q      ; C major triad, quarter
+[D3 F#3 A3 C4].h  ; D7 chord, half note
+```
+
+### Rest
+
+```clojure
+r.q         ; Quarter rest
+r.h         ; Half rest
+r.w         ; Whole rest
+```
+
+## Duration Codes
+
+| Code | Name | Beats |
+|------|------|-------|
 | `w` | Whole | 4 |
 | `h` | Half | 2 |
 | `q` | Quarter | 1 |
-| `e` | Eighth | 0.5 |
-| `s` | Sixteenth | 0.25 |
+| `e` | Eighth | 1/2 |
+| `s` | Sixteenth | 1/4 |
+| `t` | Thirty-second | 1/8 |
+| `x` | Sixty-fourth | 1/16 |
 
-Add `.` for dotted, `..` for double-dotted.
+### Dotted Durations
 
-### Event Properties
+| Code | Name | Beats |
+|------|------|-------|
+| `q.` | Dotted quarter | 3/2 |
+| `h.` | Dotted half | 3 |
+| `q..` | Double-dotted quarter | 7/4 |
 
-| Property | Description |
-|----------|-------------|
-| `:id` | Stable UUIDv7 identifier (REQUIRED) |
-| `:at` | Absolute beat position (REQUIRED) |
-| `:dyn` | Dynamic (pp, p, mp, mf, f, ff, etc.) |
-| `:art` | Articulation (staccato, tenuto, etc.) |
-| `:orn` | Ornament (trill, mordent, etc.) |
-| `:tech` | Technique (pizz, arco, etc.) |
+## Event Properties
+
+```clojure
+(: 0 G4.q 
+  :id #uuid "018c3f2a-..."
+  :dyn ff
+  :art staccato
+  :orn trill
+  :tech pizz
+  :lyrics [{:text "Hal-" :syllabic begin}]
+  :grace true
+  :cue true
+  :cue-source violin-1)
+```
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `:dyn` | keyword | Dynamic marking |
+| `:art` | keyword | Articulation |
+| `:orn` | keyword | Ornament |
+| `:tech` | keyword | Playing technique |
+| `:lyrics` | list | Lyric syllables |
+| `:grace` | boolean | Grace note |
+| `:cue` | boolean | Cue note |
+| `:cue-source` | instrument-id | Source for cue |
+
+### Dynamics
+
+```
+pppp ppp pp p mp mf f ff fff ffff
+sfz sfp sffz fz rf rfz fp sf
+```
+
+### Articulations
+
+```
+staccato staccatissimo tenuto accent marcato
+portato fermata breath caesura
+```
+
+### Ornaments
+
+```
+trill mordent mordent-inverted
+turn turn-inverted tremolo
+arpeggio glissando
+```
+
+### Techniques (Strings)
+
+```
+arco pizz pizz-snap
+pont tasto normale
+harm harm-natural harm-artificial
+spicc detache martele
+```
+
+### Techniques (Winds)
+
+```
+tongue double-tongue triple-tongue flutter
+cuivre stopped open mute-straight
+```
+
+## Tuplets
+
+```clojure
+(tuplet 3:2 q
+  (: 0 C4.e :id #uuid "...")
+  (: 0+1/3 D4.e :id #uuid "...")
+  (: 0+2/3 E4.e :id #uuid "..."))
+```
+
+Triplet: 3 notes in the space of 2 quarters.
+
+## Grace Notes
+
+```clojure
+(grace :type acciaccatura
+  (: 0 D5.s :id #uuid "..."))
+
+(: 0 C5.q :id #uuid "...")  ; Main note
+```
+
+Grace types: `acciaccatura`, `appoggiatura`

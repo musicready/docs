@@ -1,94 +1,154 @@
 ---
-title: "Synopsis Format"
-description: "Compressed structural views providing global awareness for agent operations."
+title: "Structural Index"
+description: "Compressed global view for structural awareness without loading the full score."
 ---
 
-The Synopsis is a compressed structural view of the full score. It provides global context without full detail.
+The Structural Index provides agents with global awareness of the score's structure without requiring the full content.
 
-See: [`/MRS-Specification-RFC#6-synopsis-format`](/MRS-Specification-RFC#6-synopsis-format)
+See: [`/MRS-Specification-RFC#9-structural-index`](/MRS-Specification-RFC#9-structural-index)
 
-## Characteristics
+## Purpose
 
-The Synopsis is:
+Agents operating on a focused region need to understand:
+- Where they are in the overall form
+- Key areas and tempo changes
+- What instruments are active
+- Rehearsal mark locations
 
-- **Derived**: Computed from full MRS-S
-- **Read-only**: Agents cannot modify it
-- **Lossy by design**: Context, not content
+The Structural Index provides this without loading the entire score.
 
-## Structure
+## Index Structure
 
 ```clojure
-(synopsis
+(structural-index
   :hash "sha256:abc123..."
   :source-hash "sha256:def456..."
   
-  :structure
-    (movement 1 :title "Allegro" 
-      :first-measure #uuid "018c3f40-0001-..." 
-      :last-measure #uuid "018c3f40-0144-..."
-      :display-range [1 324]
-      :key C :mode minor)
+  :form
+    (sections
+      (section :type exposition :measures #uuid "..." #uuid "..." :display [1 64])
+      (section :type development :measures #uuid "..." #uuid "..." :display [65 120])
+      (section :type recapitulation :measures #uuid "..." #uuid "..." :display [121 180]))
   
-  :parts
-    (part violin-1 :section strings :range [G3 E7])
-    (part clarinet-1 :section woodwinds :transposition (down M2))
+  :key-areas
+    ((region :key C :mode minor :measures #uuid "..." #uuid "...")
+     (region :key Eb :mode major :measures #uuid "..." #uuid "...")
+     (region :key G :mode minor :measures #uuid "..." #uuid "..."))
   
-  :harmonic-spine
-    ((:measures #uuid "..." #uuid "..."
-      :key Cm :function i :display-range [1 8])
-     (:measures #uuid "..." #uuid "..."
-      :key Eb :function III :display-range [9 16]))
+  :tempo-map
+    ((tempo :bpm 120 :measures #uuid "..." #uuid "...")
+     (tempo :bpm 80 :text "Adagio" :measures #uuid "..." #uuid "..."))
   
-  :thematic-regions
-    ((theme-a 
-      :first-appearance #uuid "..."
-      :display-measure 1
-      :parts [violin-1] 
-      :recurrences [#uuid "..." #uuid "..."])
-     (theme-b 
-      :first-appearance #uuid "..."
-      :parts [cello]))
+  :players-summary
+    ((player woodwind-2 :instruments [flute-2 piccolo] :active-measures [...])
+     (player clarinet-1 :instruments [clarinet-bb] :active-measures [...]))
   
-  :density-profile
-    ((:measures #uuid "..." #uuid "..."
-      :avg-events-per-beat 2.3 
-      :active-parts 4))
+  :rehearsal-marks
+    ((mark "A" :measure #uuid "..." :number 16)
+     (mark "B" :measure #uuid "..." :number 32)
+     (mark "C" :measure #uuid "..." :number 48))
   
-  :rehearsal-map
-    ((A #uuid "..." :display 1)
-     (B #uuid "..." :display 32)
-     (C #uuid "..." :display 64)))
+  :total-measures 180
+  :total-duration "12:34")
 ```
 
-## Synopsis Fields
+## Index Fields
+
+### Form
+
+```clojure
+:form
+  (sections
+    (section :type exposition :measures #uuid "..." #uuid "..." :display [1 64])
+    (section :type development :measures #uuid "..." #uuid "..." :display [65 120]))
+```
 
 | Field | Description |
 |-------|-------------|
-| `:hash` | SHA-256 of the synopsis itself |
-| `:source-hash` | SHA-256 of the MRS-S it was derived from |
-| `:structure` | Movement/section boundaries |
-| `:parts` | Part summary (section, range, transposition) |
-| `:harmonic-spine` | Chord progression and key areas |
-| `:thematic-regions` | Theme appearances and recurrences |
-| `:density-profile` | Texture information by region |
-| `:rehearsal-map` | Rehearsal marks with UUID/measure mappings |
+| `:type` | Section type (exposition, development, coda, etc.) |
+| `:measures` | UUID range |
+| `:display` | Human-readable measure numbers |
 
-## Access
+### Key Areas
 
-Working Set Envelopes reference the synopsis by hash:
+```clojure
+:key-areas
+  ((region :key C :mode minor :measures #uuid "..." #uuid "...")
+   (region :key Eb :mode major :measures #uuid "..." #uuid "..."))
+```
+
+### Tempo Map
+
+```clojure
+:tempo-map
+  ((tempo :bpm 120 :measures #uuid "..." #uuid "...")
+   (tempo :bpm 80 :text "Adagio" :measures #uuid "..." #uuid "..."))
+```
+
+### Players Summary
+
+```clojure
+:players-summary
+  ((player woodwind-2 :instruments [flute-2 piccolo] :active-measures [...])
+   (player clarinet-1 :instruments [clarinet-bb] :active-measures [...]))
+```
+
+### Rehearsal Marks
+
+```clojure
+:rehearsal-marks
+  ((mark "A" :measure #uuid "..." :number 16)
+   (mark "B" :measure #uuid "..." :number 32))
+```
+
+## Index Derivation
+
+The structural index can be:
+
+| Source | Description |
+|--------|-------------|
+| **Derived** | Automatically computed from the score |
+| **Enhanced** | Enriched by analytical overlays |
+| **Annotated** | Manually labeled (form, section names) |
+
+### Automatically Derived
+
+- Measure count
+- Key signature changes
+- Tempo changes
+- Rehearsal marks
+- Player/instrument activity
+
+### Requires Analysis/Annotation
+
+- Form labels (exposition, development, etc.)
+- Thematic regions
+- Phrase structure
+
+## Usage in Working Sets
+
+Working Set Envelopes include a reference to the structural index:
 
 ```clojure
 (working-set
   ...
-  :synopsis-ref "sha256:abc123...")
+  :structural-index-ref "sha256:abc123..."
+  ...)
 ```
 
-Agents can query the orchestrator:
+Agents can use this to:
+- Understand where they are in the form
+- Check what other instruments are active
+- Find rehearsal marks for reference
+- Understand key and tempo context
 
-```clojure
-(query
-  :type synopsis
-  :ref "sha256:abc123..."
-  :response (synopsis ...))
-```
+## Index vs Context Views
 
+| Structural Index | Context Views |
+|------------------|---------------|
+| Global overview | Task-specific detail |
+| Read-only summary | May include content |
+| Always available | Selected per task |
+| Score-level info | Region-level info |
+
+Both are used together: the index for global awareness, context views for task-specific information.

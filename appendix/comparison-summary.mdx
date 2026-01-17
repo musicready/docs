@@ -1,19 +1,104 @@
 ---
 title: "Appendix: Comparison with Other Formats"
-description: "How MRS-S compares to MusicXML, ABC notation, and LilyPond."
+description: "How MRS compares to MusicXML, ABC notation, LilyPond, and other formats."
 ---
 
-See: [`/MRS-Specification-RFC#appendix-c-comparison-with-existing-formats`](/MRS-Specification-RFC#appendix-c-comparison-with-existing-formats)
+## Format Comparison
 
-| Aspect | MRS-S | MusicXML | ABC Notation | LilyPond |
-|--------|-------|----------|--------------|----------|
-| Syntax | S-expression | XML | Custom text | Custom text |
-| Formal grammar | Yes | Yes (XSD) | Partial | No |
-| UUID identifiers | Yes | No | No | No |
-| Context-aware extraction | Yes | No | No | No |
-| Agent-friendly | Yes | No | Partial | No |
-| Full score support | Yes | Yes | Limited | Yes |
-| Semantic precision | High | High | Low | Medium |
-| Local editing | Yes | Difficult | Difficult | Difficult |
+| Aspect | MRS | MusicXML | ABC | LilyPond | MEI |
+|--------|-----|----------|-----|----------|-----|
+| **Syntax** | S-expression | XML | Custom text | Custom text | XML |
+| **Formal grammar** | Yes | Yes (XSD) | Partial | No | Yes (RNG) |
+| **UUID identifiers** | Yes | No | No | No | Optional |
+| **Mutation protocol** | MRS-Ops | None | None | None | None |
+| **Context extraction** | Yes | No | No | No | No |
+| **Agent-optimized** | Yes | No | Partial | No | No |
+| **Full score support** | Yes | Yes | Limited | Yes | Yes |
+| **Semantic precision** | High | High | Low | Medium | High |
+| **Local editing** | Yes | Difficult | Difficult | Difficult | Difficult |
 
-MRS-S combines the semantic precision of MusicXML with the parsability of S-expressions, stable UUID identifiers for structural stability, and native support for context-aware agent operations via Working Set Envelopes with context rings and synopsis access.
+## Key Differentiators
+
+### Separation of Storage and Mutation
+
+MRS is unique in providing separate formats optimized for different purposes:
+
+| Format | Purpose | Optimization |
+|--------|---------|--------------|
+| MRS-S | Storage, interchange, archival | Completeness, human readability |
+| MRS-Ops | Agent mutations | Reliability, minimal surface, explicit intent |
+
+Other formats use a single representation for both reading and writing, which creates challenges for AI agents.
+
+### Orchestrator-Derived Fields
+
+| Approach | Formats | Problem |
+|----------|---------|---------|
+| Agent computes `:at` | MusicXML, LilyPond | Calculation errors, synchronization bugs |
+| Orchestrator computes `:at` | MRS | Single source of truth, no agent math |
+
+### Professional Orchestration Model
+
+| Model | Formats | Limitation |
+|-------|---------|------------|
+| Part = Instrument | Most formats | Cannot represent instrument doubling |
+| Player → Instruments | MRS | Full orchestration semantics |
+
+MRS supports:
+- Flute 2 / Piccolo doublings
+- Mid-score instrument changes
+- Transposition handling across changes
+- Percussion kits
+- Condensed scores and divisi
+
+### Task-Adaptive Context
+
+| Approach | Problem |
+|----------|---------|
+| Fixed context (all surrounding measures) | May include irrelevant content, omit critical content |
+| Task-adaptive views | Agent receives exactly what's needed for the task |
+
+MRS context views include:
+- `melodic-reference`: The melody to respond to
+- `harmonic-context`: Chord progression
+- `orchestration-map`: Active instruments, texture
+- `phrase-structure`: Phrase boundaries
+- `dynamics-profile`: Dynamics trajectory
+
+## Why Not Use Existing Formats?
+
+### MusicXML
+- Verbose XML syntax expands token count
+- No UUID stability (structural references break on edit)
+- No separation of read/write formats
+- No context extraction mechanism
+
+### LilyPond
+- Designed for human editing, not AI consumption
+- Implicit voice numbering creates ambiguity
+- No UUID identifiers
+- Difficult to extract and replace sections
+
+### MEI
+- Designed for scholarly encoding, not composition workflows
+- Heavy XML syntax
+- No mutation protocol
+- Primarily archival rather than operational
+
+### ABC Notation
+- Limited to simple monophonic music
+- No full score support
+- No semantic precision for orchestral works
+
+## Summary
+
+MRS combines:
+- The semantic precision of MusicXML and MEI
+- The parsability of S-expressions
+- Stable UUID identifiers for structural stability
+- Typed mutation protocol (MRS-Ops) for reliable agent output
+- Task-adaptive context views for relevant information
+- Professional orchestration semantics (Player → Instrument → Staff)
+- Progressive validation before state mutation
+
+This architecture enables reliable AI-assisted composition at scales (full orchestral works) that are impossible with existing formats.

@@ -1,15 +1,20 @@
 ---
 title: "Query Resolution"
-description: "How human-friendly references (measure numbers, rehearsal marks) resolve to UUIDs."
+description: "Translating human-friendly references to UUIDs."
 ---
 
-MRS uses UUIDs internally for structural stability, but humans navigate by measure numbers and rehearsal marks. The Query Resolution protocol bridges this gap.
+The orchestrator translates human-friendly references (measure numbers, rehearsal marks) to UUIDs for structural operations.
 
-See: [`/MRS-Specification-RFC#11-query-resolution`](/MRS-Specification-RFC#11-query-resolution)
+See: [`/MRS-Specification-RFC#14-query-resolution`](/MRS-Specification-RFC#14-query-resolution)
 
-## Overview
+## Why Query Resolution?
 
-The orchestrator translates human-friendly references to UUIDs. Agents always receive and work with UUIDs.
+UUIDs provide stable identity, but humans think in:
+- Measure numbers ("measure 45")
+- Rehearsal marks ("4 bars after B")
+- Structural positions ("the development section")
+
+Query resolution bridges human intent and structural identity.
 
 ## Query Types
 
@@ -40,6 +45,8 @@ The orchestrator translates human-friendly references to UUIDs. Agents always re
   :response (:id #uuid "018c3f40-0024-..." :number 36))
 ```
 
+"4 measures after rehearsal B"
+
 ### Range Resolution
 
 ```clojure
@@ -51,22 +58,93 @@ The orchestrator translates human-friendly references to UUIDs. Agents always re
              :display-range [45 52]))
 ```
 
+### Section Resolution
+
+```clojure
+(query
+  :type resolve
+  :human-ref (:section "development")
+  :response (:from #uuid "..." :to #uuid "..." :display-range [65 120]))
+```
+
+Requires form analysis overlay.
+
 ## Reverse Resolution
 
-Get display information from a UUID:
+UUID to display information:
 
 ```clojure
 (query
   :type display-info
   :id #uuid "018c3f40-002d-..."
-  :response (:number 45 :rehearsal "C" :beat-start 487+1/4))
+  :response (:number 45 :rehearsal "C" :beat-start 487))
 ```
 
-## Workflow
+Useful for:
+- Generating human-readable error messages
+- Creating display hints in Working Sets
+- Logging and debugging
 
-1. Human provides instruction: "Edit measures 45-52"
-2. Orchestrator resolves to UUIDs
-3. Working Set Envelope uses UUID scope with display hint
-4. Agent works entirely with UUIDs
-5. Results displayed with human-friendly numbers
+## Resolution in Working Sets
 
+Working Set Envelopes include display hints derived from query resolution:
+
+```clojure
+(working-set
+  :scope
+    (:measures #uuid "018c3f40-002d-..." #uuid "018c3f40-0034-...")
+    (:instruments [clarinet-bb])
+  :display-hint (:measures 45 52)  ; From reverse resolution
+  ...)
+```
+
+The display hint is informational only—never used for structural reference.
+
+## Resolution Errors
+
+| Error | Description |
+|-------|-------------|
+| `RESOLVE-001` | Measure number not found |
+| `RESOLVE-002` | Rehearsal mark not found |
+| `RESOLVE-003` | Section name not found |
+| `RESOLVE-004` | Offset out of bounds |
+
+```clojure
+(query
+  :type resolve
+  :human-ref (:rehearsal "Z")
+  :error (:code RESOLVE-002 :message "Rehearsal mark 'Z' not found"))
+```
+
+## Usage in Task Instructions
+
+Human task instructions use friendly references:
+
+> "Add a clarinet countermelody from rehearsal B to 8 bars after B"
+
+The orchestrator resolves:
+1. "rehearsal B" → `#uuid "018c3f40-0020-..."`
+2. "8 bars after B" → `#uuid "018c3f40-0028-..."`
+
+And creates a Working Set with those UUIDs in scope.
+
+## Query Capabilities
+
+Agents may request resolution:
+
+```clojure
+:available-queries
+  [:resolve-measure
+   :resolve-rehearsal
+   :resolve-section
+   :display-info]
+```
+
+Query request from agent:
+
+```clojure
+(query-request
+  :type resolve
+  :human-ref (:rehearsal "C")
+  :reason "Need to reference theme from section C")
+```
