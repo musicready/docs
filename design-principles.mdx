@@ -3,20 +3,23 @@ title: "Design Principles"
 description: "Core design philosophy guiding MRS architecture decisions."
 ---
 
-MRS is built on principles derived from the real requirements of AI-assisted composition at professional scale.
+MRS is built on principles derived from the real requirements of AI-assisted composition and orchestration at professional scale.
 
 See: [`/MRS-Specification-RFC#2-design-principles`](/MRS-Specification-RFC#2-design-principles)
 
-## Separation of Concerns: Storage vs Mutation
+## Separation of Concerns: Semantic Model vs Representations
 
-MRS uses different representations optimized for different purposes:
+MRS is a **semantic model** plus protocols for safe editing. It may be represented in multiple ways depending on the audience and task.
 
-| Concern | Format | Optimized For |
-|---------|--------|---------------|
-| Storage, interchange, archival | MRS-S | Completeness, human readability, validation |
-| Agent output, mutations | MRS-Ops | Reliability, minimal surface, explicit intent |
+| Concern | Representation | Optimized For |
+|---------|----------------|--------------|
+| Canonical semantics | (Implementation-defined) | Correctness, indexing, partial extraction |
+| Human/audit/interchange view | MRS-S | Completeness, readability, validation |
+| Agent output (mutations) | MRS-Ops | Reliability, minimal surface, explicit intent |
 
-**Rationale**: Asking agents to emit complete, valid score fragments creates high failure rates from accidental omissions, calculation errors, and hallucinated references. Typed operations with orchestrator-derived fields eliminate entire error classes.
+**Rationale**: The architecture should not depend on a single file format. What matters is stable identity, deterministic application, and human-auditable changes.
+
+**Reliability consequence**: Asking agents to emit complete, valid score fragments creates high failure rates from accidental omissions, calculation errors, and hallucinated references. Typed operations with orchestrator-derived fields eliminate entire error classes.
 
 ```clojure
 ;; Agent reads MRS-S (complete, human-auditable)
@@ -99,9 +102,11 @@ Every musical element has an explicit representation. Position in the measure is
 
 ## Semantic Over Visual
 
-MRS encodes musical meaning, not visual appearance. A crescendo is marked with start/end points and type, not with specific hairpin coordinates.
+MRS encodes musical meaning, not page layout. A crescendo is marked with semantic anchors (start/end and type), not with graphical coordinates.
 
-**Rationale**: Visual rendering is context-dependent (page size, staff spacing, font). Semantic encoding remains valid across all rendering contexts.
+**Rationale**: Layout is context-dependent (page size, staff spacing, font). Semantic encoding remains valid across renderers.
+
+**Practical note**: Real-time feedback still matters for musicians. Implementations can render previews by exporting the relevant region to a notation engine, or by using a lightweight preview renderer, without making engraving geometry part of the canonical model.
 
 ## Predictable Over Clever
 

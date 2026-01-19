@@ -19,16 +19,18 @@ description: "How MRS compares to MusicXML, ABC notation, LilyPond, and other fo
 
 ## Key Differentiators
 
-### Separation of Storage and Mutation
+### Separation of Representations (Read vs Write)
 
-MRS is unique in providing separate formats optimized for different purposes:
+MRS separates what you **read** from what you **write**:
 
-| Format | Purpose | Optimization |
-|--------|---------|--------------|
-| MRS-S | Storage, interchange, archival | Completeness, human readability |
-| MRS-Ops | Agent mutations | Reliability, minimal surface, explicit intent |
+| Representation | Purpose | Optimization |
+|---------------|---------|--------------|
+| MRS-S | Complete score semantics (human/audit/interchange; agent input) | Completeness, readability |
+| MRS-Ops | Explicit mutations (agent output) | Reliability, minimal surface, explicit intent |
 
-Other formats use a single representation for both reading and writing, which creates challenges for AI agents.
+Other formats typically use a single representation for both reading and writing, which makes safe, repeated, local edits much harder for automated systems.
+
+**Implementation note**: The canonical state can be stored internally in other forms (e.g., a database/graph model) as long as it preserves the same semantics and can export equivalent MRS-S.
 
 ### Orchestrator-Derived Fields
 
@@ -94,11 +96,11 @@ MRS context views include:
 
 MRS combines:
 - The semantic precision of MusicXML and MEI
-- The parsability of S-expressions
+- A machine-friendly, human-auditable representation (S-expressions)
 - Stable UUID identifiers for structural stability
 - Typed mutation protocol (MRS-Ops) for reliable agent output
 - Task-adaptive context views for relevant information
 - Professional orchestration semantics (Player → Instrument → Staff)
 - Progressive validation before state mutation
 
-This architecture enables reliable AI-assisted composition at scales (full orchestral works) that are impossible with existing formats.
+This architecture enables reliable AI-assisted composition and orchestration at full-score scales that are impractical with interchange-oriented formats alone.

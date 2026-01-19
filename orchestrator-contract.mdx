@@ -3,7 +3,7 @@ title: "Orchestrator Contract"
 description: "Validation, transactions, conflict detection, and the single-writer pattern."
 ---
 
-The orchestrator is the central coordinator that makes AI-driven composition safe and reliable at scale. It maintains the canonical score state and mediates all agent operations through progressive validation and typed operations.
+The orchestrator is the central coordinator that makes AI-assisted composition and orchestration safe and reliable at scale. It maintains the canonical score state and mediates all agent operations through progressive validation and typed operations.
 
 **Core principle**: Agents read MRS-S; agents write MRS-Ops. Only the orchestrator applies changes to canonical state.
 
@@ -12,7 +12,7 @@ See: [`/MRS-Specification-RFC#12-orchestrator-contract`](/MRS-Specification-RFC#
 ## Orchestrator Architecture
 
 ```
-         ORCHESTRATOR (owns canonical MRS-S state)
+         ORCHESTRATOR (owns canonical score state)
                 │
     ┌───────────┼───────────┬───────────┐
     ▼           ▼           ▼           ▼
@@ -32,10 +32,12 @@ See: [`/MRS-Specification-RFC#12-orchestrator-contract`](/MRS-Specification-RFC#
 | **UUID minting** | Maps tmp-ids to UUIDs; sole authority for ID creation |
 | **Derived fields** | Computes `:beat-start`, `:at`, reconciles inherited state |
 | **Progressive validation** | Validates operations in stages before application |
-| **State management** | Maintains canonical MRS-S; applies validated changes |
+| **Canonical state management** | Maintains canonical score semantics; applies validated changes |
 | **Context generation** | Creates task-adaptive context views |
 | **Conflict detection** | Uses source-hash to detect concurrent modifications |
 | **Audit trail** | Records all changes with attribution |
+
+**Implementation note**: “Canonical state” is a semantic concept. An orchestrator may store it as an MRS-S document, an event log plus snapshots, or a database/graph model with indexes. The contract is about behavior: deterministic application, validation, and exportable/auditable semantics.
 
 ## Edit Lanes
 
@@ -215,7 +217,7 @@ When validation passes, the orchestrator applies operations:
 
 1. **Map tmp-ids to UUIDs** in deterministic order
 2. **Compute derived fields** (`:at`, `:beat-start`)
-3. **Update canonical MRS-S** state
+3. **Update canonical score** state (and export MRS-S if needed)
 4. **Update structural index** if needed
 5. **Record transaction** in audit trail
 6. **Return result** with id-mapping
@@ -250,14 +252,20 @@ Policy options:
 
 ## Human Review Gates
 
-Certain operations trigger human review:
+Certain operations should trigger human review by default:
 
 | Trigger | Reason |
 |---------|--------|
 | Structure changes | Form is foundational |
-| Temporal changes | Affects all timing |
+| Temporal changes | Affects timing across the score |
 | Locked lane touched | Checkpoint protection |
-| Conflict detected | Cannot auto-resolve |
+| Conflict detected | Cannot auto-resolve safely |
+
+In practice, a “review” is not just textual—musicians also need to **audition**.
+
+Implementations can pair semantic diffs with:
+- a rendered excerpt of the affected region, and/or
+- a playback preview (e.g., MIDI/rendered audio)
 
 Human approval is recorded:
 
@@ -265,6 +273,6 @@ Human approval is recorded:
 (human-review
   :transaction-id #uuid "..."
   :status approved
-  :reviewer "composer"
+  :reviewer "arranger"
   :notes "Approved with minor adjustment")
 ```

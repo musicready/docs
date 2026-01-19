@@ -1,13 +1,13 @@
 ---
-title: "MRS: Music Representation Syntax"
+title: "MRS: Music Representation"
 description: "A format for encoding musical scores optimized for AI-assisted composition workflows."
 ---
 
-# MRS: Music Representation Syntax
+# MRS: Music Representation
 
-**MRS enables AI-driven composition of full orchestral works—symphonies, vocal arrangements, film scores—through iterative conversation with humans in the loop.**
+**MRS enables AI-assisted composition and orchestration of full scores—symphonies, vocal arrangements, film cues—through iterative collaboration with a human arranger/orchestrator.**
 
-Think of it as the **"opencode of Dorico"**: professional-grade notation infrastructure designed from the ground up for agent-driven workflows. The goal is the hardest version of the problem: creating complex, multi-movement works from scratch with the granularity required for professional projects.
+Think of it as *Dorico-level score semantics* designed for collaboration with AI: the system can propose precise edits, but the human remains the musical authority. You might enter material through notation, a MIDI keyboard, or a rough sketch; MRS lets an agent work on a bounded region of the score with the right surrounding context, and lets you review and audition changes before they become canonical.
 
 ## Why MRS?
 
@@ -19,10 +19,12 @@ AI cannot currently compose or edit full orchestral scores reliably. Three funda
 
 MRS solves these through architectural separation:
 
-- **MRS-S** for storage: Complete, archival-quality encoding with stable UUIDs
-- **MRS-Ops** for mutation: Typed operation protocol with orchestrator-derived fields
-- **Task-adaptive context**: Dynamic views tailored to specific editing tasks
-- **Orchestrator authority**: Single source of truth for UUIDs, derived fields, and state
+- **MRS-S** for storage and reading: Complete, archival-quality score encoding with stable UUIDs
+- **MRS-Ops** for mutation: Typed operations (create/update/delete) instead of “rewrite this section”
+- **Task-adaptive context**: Context views shaped for the task (melody reference, harmony, phrase structure, orchestration map)
+- **Orchestrator authority**: One system applies changes after validation, minting IDs and computing derived fields
+
+> Note: “Syntax” is not the point. The core idea is a **semantic model + safe mutation protocol**. MRS-S is one representation of the model; implementations may also keep a database/graph-backed canonical state and *export* MRS-S for interchange and auditability.
 
 **Is this approach feasible?** [Yes—read the detailed analysis →](/problem-and-approach)
 
@@ -82,12 +84,14 @@ Common workflows grant multiple related lanes. "Orchestrate" grants notes + expr
 
 ## The Hardest Version of the Problem
 
-MRS is designed for symphonies-from-scratch: iterative creation of complex multi-movement works through AI conversation. This means supporting:
+MRS is designed for the demanding case: **building a large, evolving score from scratch** with professional notation detail, while keeping iteration fast.
 
-- **Professional orchestration**: Player/instrument model with doubling and switching
-- **Structural creation**: Insert measures, sections, movements—not just edit existing content
-- **Incomplete states**: Early-stage work has placeholders ("strings texture TBD")
-- **Reliable iteration**: Typed operations minimize repair loops
-- **Human checkpoints**: Lock form, lock harmony, lock orchestration progressively
+That means supporting:
 
-If MRS handles symphonies-from-scratch, it handles everything simpler too.
+- **Professional orchestration reality**: player/instrument semantics (doubling, switching, condensing)
+- **Structural evolution**: insert measures/sections/movements without breaking references
+- **Draft states**: placeholders and sketches that are intentionally incomplete
+- **Safe iteration**: edits expressed as operations, validated before they touch canonical state
+- **Human checkpoints**: the orchestrator can lock approved decisions (form, harmony plan, orchestration) and prevent regression
+
+If this architecture works for a symphony, it will work for smaller projects too.

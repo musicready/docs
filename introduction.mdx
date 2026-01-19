@@ -5,7 +5,7 @@ description: "Motivation, goals, non-goals, and terminology for MRS."
 
 ## Abstract
 
-MRS (Music Representation Syntax) is a format for encoding musical scores optimized for AI-assisted composition workflows:
+MRS (Music Representation) is a model and protocol suite for encoding and safely editing musical scores in AI-assisted workflows:
 
 - **MRS-S**: The canonical storage format (S-expression based) for complete, archival-quality scores with stable UUID identifiers
 - **MRS-Ops**: The typed operation protocol for reliable agent mutations
@@ -19,11 +19,24 @@ See: [`/MRS-Specification-RFC#abstract`](/MRS-Specification-RFC#abstract)
 
 ## The Vision
 
-**MRS enables AI-driven composition of full orchestral works—symphonies, vocal arrangements, film scores—through iterative conversation with humans in the loop.**
+**MRS enables AI-assisted composition and orchestration of full scores—symphonies, vocal arrangements, film cues—through iterative collaboration with a human arranger/orchestrator.**
 
-This is the "opencode of Dorico": professional-grade notation infrastructure designed from the ground up for agent-driven workflows. The goal is not simplified demos, but the hardest version of the problem: creating complex, multi-movement works from scratch with the granularity required for professional projects.
+The goal is not “AI music generation.” The goal is **professional score authorship** with Dorico-level semantic detail, where an AI system can propose precise edits without breaking the score, and a human can approve, revise, and audition those edits as part of a normal workflow.
 
 For a detailed feasibility analysis, see: [The Problem & Why MRS is Feasible](/problem-and-approach)
+
+## The Human-in-the-Loop Workflow
+
+MRS is designed for the way musicians actually work: a mix of notation, listening, and hands-on input.
+
+A typical loop:
+
+1. **Arranger input**: enter material by notation, a MIDI keyboard, or a rough sketch (melody, chords, rhythm, orchestration notes).
+2. **Bounded AI task**: the orchestrator creates a Working Set (a scoped score fragment plus task-specific context) and asks an agent to perform a focused operation (e.g., “orchestrate these 8 bars for winds,” “add phrase slurs,” “write a bass line supporting this harmony”).
+3. **Validated application**: the agent returns typed operations (MRS-Ops). The orchestrator validates them (syntax → references → permissions → musical rules) and applies them deterministically.
+4. **Human review + audition**: the human reviews semantic diffs (what changed and why) and can audition playback previews. The human remains the authority for style, taste, and final approval.
+
+MRS stays notation-first. Playback/rendering can be integrated for feedback, but the canonical model remains focused on score semantics.
 
 ## Motivation
 
@@ -111,7 +124,7 @@ See: [`/MRS-Specification-RFC#1-4-terminology`](/MRS-Specification-RFC#1-4-termi
 ## Architecture at a Glance
 
 ```
-         ORCHESTRATOR (owns canonical MRS-S state)
+         ORCHESTRATOR (owns canonical score state)
                 │
     ┌───────────┼───────────┬───────────┐
     ▼           ▼           ▼           ▼

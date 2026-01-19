@@ -3,14 +3,16 @@ title: "Quickstart"
 description: "Get started with MRS-S and MRS-Ops for AI-assisted composition."
 ---
 
-## Two Formats, One Model
+## One Semantic Model, Multiple Representations
 
-MRS uses two formats optimized for different purposes:
+MRS is a semantic score model plus protocols for safe, bounded editing. It is commonly represented in two complementary forms:
 
-| Format | Purpose | Who Uses It |
-|--------|---------|-------------|
-| **MRS-S** | Storage, reading, archival | Orchestrator stores; agents read |
-| **MRS-Ops** | Mutations, writing | Agents write; orchestrator applies |
+| Representation | Purpose | Who Uses It |
+|---------------|---------|-------------|
+| **MRS-S** | Complete score semantics for reading, audit, and interchange | Humans review; agents read; orchestrator can export/store |
+| **MRS-Ops** | Typed mutations (explicit edits) | Agents write; orchestrator validates/applies |
+
+An implementation may keep canonical state in a database/graph form for performance, then export MRS-S as needed.
 
 Agents read MRS-S content in Working Set Envelopes. Agents write MRS-Ops operations. The orchestrator validates and applies operations to canonical state.
 

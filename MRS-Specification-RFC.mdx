@@ -1,5 +1,5 @@
 ---
-title: "MRS: Music Representation Syntax"
+title: "MRS: Music Representation"
 ---
 
 ## RFC 0001 — Version 1.0
@@ -15,7 +15,7 @@ title: "MRS: Music Representation Syntax"
 ## Abstract
 <a id="abstract"></a>
 
-This document specifies MRS (Music Representation Syntax), a format for encoding musical scores optimized for AI-assisted composition workflows at professional scale.
+This document specifies MRS (Music Representation), a model and protocol suite for encoding and safely editing musical scores in AI-assisted composition and orchestration workflows at professional scale.
 
 MRS is built on three core architectural principles:
 
@@ -254,7 +254,7 @@ The Player → Instrument → Staff model supports:
    Orchestrator applies validated operations:
    - Maps tmp-ids to UUIDs
    - Computes derived fields
-   - Updates canonical MRS-S state
+   - Updates canonical score state (and can export MRS-S)
    - Records audit trail
 
 5. RESPONSE
@@ -1459,7 +1459,7 @@ Implementations MUST treat rationals as exact; no floating-point approximation.
 ## 12. Orchestrator Contract
 <a id="12-orchestrator-contract"></a>
 
-The orchestrator is the central coordinator that makes AI-driven composition safe and reliable.
+The orchestrator is the central coordinator that makes AI-assisted composition and orchestration safe and reliable.
 
 ### 12.1 Orchestrator Responsibilities
 
@@ -1468,7 +1468,7 @@ The orchestrator is the central coordinator that makes AI-driven composition saf
 | UUID minting | Maps tmp-ids to UUIDs; sole authority for ID creation |
 | Derived fields | Computes `:beat-start`, reconciles inherited state |
 | Validation | Progressive validation of all operations |
-| State management | Maintains canonical MRS-S; applies validated changes |
+| State management | Maintains canonical score state; applies validated changes |
 | Context generation | Creates task-adaptive context views |
 | Conflict detection | Uses source-hash to detect concurrent modifications |
 | Audit trail | Records all changes with attribution |

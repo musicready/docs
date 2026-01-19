@@ -1,15 +1,15 @@
 ---
 title: "The Problem & Why MRS is Feasible"
-description: "A clear statement of the problem MRS solves and why this approach will work for AI-driven composition at professional scale."
+description: "A clear statement of the problem MRS solves and why this approach can work for AI-assisted composition and orchestration at professional scale."
 ---
 
 ## The Vision
 
-**MRS enables AI-driven composition of full orchestral works—symphonies, vocal arrangements, film scores—through iterative conversation with humans in the loop.**
+**MRS enables AI-assisted composition and orchestration of full scores—symphonies, vocal arrangements, film cues—through iterative collaboration with a human arranger/orchestrator.**
 
-Think of it as "the opencode of Dorico": professional-grade notation infrastructure designed from the ground up for agent-driven workflows, where you can go from a chord chart or initial sketch to a fully orchestrated symphony through AI collaboration.
+The objective is Dorico-level semantic detail without “information ceilings.” The system must be able to represent and edit the same kinds of decisions a professional score needs: instruments and doublings, voicing, notation semantics, phrasing and expression, and evolving form.
 
-This is not a simplified demo. This is the hardest version of the problem: creating complex, multi-movement works from scratch, iteratively, with the granularity required for professional Dorico-level projects.
+This is not a simplified demo. It targets the hardest case: creating and revising large, multi-movement works from scratch, iteratively, while keeping the score structurally safe and human-auditable.
 
 ---
 
@@ -56,19 +56,18 @@ Even with good models, these failures require multiple repair loops, destroying 
 ## Why Existing Solutions Fail
 
 ### MusicXML / MEI
-- **Too verbose**: A simple melody requires hundreds of lines of XML
-- **No context management**: No built-in mechanism for bounded editing with context
-- **Positional references**: Break on structural changes
-- **Not agent-friendly**: Designed for interchange between notation apps, not AI workflows
+- **Interchange-first, not editing-first**: Excellent for export/import, but not designed for repeated, local, semantically-safe edits.
+- **Too verbose for agent interaction**: Token cost is high; diffs are noisy.
+- **Fragile references**: Many references are positional or implicit, and break under structural edits.
 
 ### ABC Notation / LilyPond
-- **No formal grammar**: Ambiguous parsing, especially for complex scores
-- **No stable identity**: No UUIDs, no way to reference "this specific note" across edits
-- **Human-entry optimized**: Shortcuts and abbreviations that confuse machine generation
+- **Human-authoring optimized**: Powerful for humans, but heavy on implicit state and shorthand.
+- **No stable identity**: Difficult to reference “that exact note” after insertions/deletions.
 
 ### MIDI
-- **No semantic content**: Pure performance data, no notation semantics
-- **No structure**: No measures, no phrase boundaries, no form
+- **Performance data, not score semantics**: Great for capturing a performance or sketch, but it does not reliably encode notation intent (spelling, voices, phrasing, structure).
+
+> In practice, a professional workflow uses **both**: MIDI as input/idea capture and a notation model for the authoritative score. MRS is about the score semantics and safe editing; MIDI can be an input and a preview output, not the canonical truth.
 
 ---
 
@@ -147,38 +146,39 @@ Errors caught before state mutation. Specific feedback. No silent corruption.
 
 ### The Scale Problem → Solved by Scoped Extraction
 
-Working Set Envelopes reduce a 1.5M token orchestral score to a focused fragment (typically 5-50K tokens) with task-appropriate context.
+Working Set Envelopes reduce a full orchestral score to a focused fragment (often 5–50K tokens) *plus* task-appropriate context, so the agent is not forced to “hold the whole piece.”
 
 ### The Context Problem → Solved by Task-Adaptive Views
 
-Context views provide what's actually needed for the task—melodic references, harmonic context, texture maps—not fixed "more measures at reduced detail."
+Context views supply what the task actually needs—melodic references, harmonic context, phrase structure, orchestration maps—instead of “more measures at reduced detail.”
 
-### The Reliability Problem → Solved by Architecture
+### The Reliability Problem → Solved by Typed Operations + Validation
 
-| Failure Mode | How MRS Eliminates It |
-|--------------|----------------------|
-| Accidental deletion | Explicit operations (create/update/delete) |
-| Calculation errors | Orchestrator computes derived fields |
-| Hallucinated references | Orchestrator validates all refs |
-| Format violations | Typed operations with schema |
+| Failure Mode | What Prevents It |
+|--------------|------------------|
+| Accidental deletion | Explicit create/update/delete operations (no implicit replacement) |
+| Calculation errors | Orchestrator computes derived fields (no agent arithmetic) |
+| Hallucinated references | Reference validation before application |
+| Drift beyond scope | Scope + lane permissions enforced by the orchestrator |
 
-### The Iteration Problem → Solved by the Orchestrator Pattern
+### Similarities to Large Codebases (and Why Music is Harder)
 
-```
-         ORCHESTRATOR (owns canonical state)
-         │         │         │         │
-         ▼         ▼         ▼         ▼
-     Harmony    Melody    Orch.    Expression
-     Agent      Agent     Agent      Agent
-```
+At a systems level, this looks like how teams safely change large codebases:
+- You don’t “rewrite the repository.” You make bounded changes, review diffs, and run validations.
+- The orchestrator plays the role of a gate: validate → apply → record.
 
-Agents write operations; orchestrator validates and applies. Conflicts detected via source-hash. Lane bundles grant appropriate permissions.
+But music is harder than code in two key ways:
+
+1. **There is no universal compiler for “good music.”** A score can be syntactically correct but stylistically wrong. Validation can catch “illegal” changes (out of range, broken ties, duration overflow), but taste remains human.
+2. **Musical coupling is highly non-local.** A local orchestration change affects balance, texture, phrasing, and form perception. The system must supply the right musical context, not just the nearby measures.
+
+This is why MRS separates: *canonical semantics* (what the score is) from *task-adaptive context* (what an agent needs to make a good suggestion) and *human review* (what makes it musically final).
 
 ---
 
 ## The Hardest Version of the Problem
 
-MRS is designed for the most demanding case: **creating a symphony from scratch, iteratively, through AI conversation**.
+MRS is designed for the most demanding case: **building and revising a large score from scratch**, iteratively, with AI assistance and human review.
 
 This means supporting:
 
@@ -197,7 +197,12 @@ If MRS handles symphonies-from-scratch, it handles everything simpler too.
 
 ### 1. The Orchestrator is the Product
 
-The core IP is not the syntax—it's the **orchestrator + validation + typed operations**. MRS-S is the canonical representation; the orchestrator is what makes iterative composition safe and reliable.
+The core IP is not the surface syntax—it’s the **orchestrator + validation + typed operations**.
+
+MRS-S is a human-auditable representation of the score semantics. Implementations may store canonical state in a different form (for example, a database/graph-backed model) as long as they preserve the same semantics and can reliably:
+- extract Working Sets,
+- validate and apply MRS-Ops,
+- and export MRS-S for interchange/audit when needed.
 
 ### 2. AI Quality Will Improve
 

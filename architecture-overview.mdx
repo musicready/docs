@@ -3,7 +3,7 @@ title: "Architecture Overview"
 description: "How MRS components work together for AI-assisted composition."
 ---
 
-MRS enables context-aware agent operations on full-scope scores through architectural separation of storage and mutation formats, orchestrator authority, and task-adaptive context.
+MRS enables safe, context-aware agent operations on full scores through a separation of concerns: a semantic score model, typed mutation operations, orchestrator authority, and task-adaptive context.
 
 See: [`/MRS-Specification-RFC#3-architecture-overview`](/MRS-Specification-RFC#3-architecture-overview)
 
@@ -53,13 +53,15 @@ See: [`/MRS-Specification-RFC#3-architecture-overview`](/MRS-Specification-RFC#3
 
 ## Core Components
 
-### MRS-S (Storage Format)
+### MRS-S (Human/Audit Representation)
 
-The canonical format for complete, archival-quality scores:
+A complete, archival-quality representation of score semantics:
 - Human-readable S-expression syntax
 - Stable UUIDv7 identifiers for all objects
 - Complete semantic fidelity
-- Used for storage, interchange, and agent input
+- Useful for interchange, debugging, review, and as agent input
+
+**Implementation note**: An orchestrator does not have to store canonical state as a single MRS-S text document. A database/graph-backed canonical model with indexes and caches can materially improve extraction speed and real-time feedback, as long as it preserves MRS semantics and can export equivalent MRS-S.
 
 ### MRS-Ops (Mutation Protocol)
 
@@ -128,7 +130,7 @@ Typed metadata attached to score regions:
    Orchestrator applies validated operations:
    - Maps tmp-ids to UUIDs
    - Computes derived fields
-   - Updates canonical MRS-S state
+   - Updates canonical score state (and can export MRS-S)
    - Records audit trail
 
 5. RESPONSE
